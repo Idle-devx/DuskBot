@@ -44,18 +44,28 @@ const DM_EMBED_CONFIG = {
   unban: { emoji: "🔓", title: "🔓 You were unbanned", channelAction: "was unbanned", color: 0x57f287 },
 };
 
+// Etiqueta corta para el título del embed del canal (los títulos de Discord
+// no renderizan @menciones, por eso el usuario afectado va en la descripción).
+const COMMAND_LABELS = {
+  ban: "Ban",
+  kick: "Kick",
+  softban: "Softban",
+  mute: "Mute",
+  unban: "Unban",
+};
+
 // Builder genérico usado tanto por el cartel de DM como por el del canal.
-// title y thumbnailUrl los decide cada función específica de más abajo.
-function buildEmbedBase(command, guild, reason, executor, extra, title, thumbnailUrl) {
+// title y description los decide cada función específica de más abajo.
+function buildEmbedBase(command, reason, executor, extra, title, description, thumbnailUrl) {
   const config = DM_EMBED_CONFIG[command];
 
   const embed = new EmbedBuilder()
     .setColor(config.color)
     .setTitle(title)
-    .setDescription(`In **${guild.name}**`)
+    .setDescription(description)
     .addFields(
       { name: "Reason", value: reason || "No reason specified" },
-      { name: "Action taken by", value: executor.tag, inline: true }
+      { name: "Action taken by", value: `<@${executor.id}>`, inline: true }
     )
     .setTimestamp();
 
@@ -75,21 +85,31 @@ function buildEmbedBase(command, guild, reason, executor, extra, title, thumbnai
 // Cartel de DM: título genérico ("You were banned"), ícono del servidor.
 function buildModEmbed(command, guild, reason, executor, extra = {}) {
   const config = DM_EMBED_CONFIG[command];
-  return buildEmbedBase(command, guild, reason, executor, extra, config.title, guild.iconURL());
-}
-
-// Cartel del canal donde se ejecutó el comando: título con el usuario
-// afectado (ej. "@usuario was banned") y su avatar en vez del ícono del servidor.
-function buildChannelModEmbed(command, targetUser, guild, reason, executor, extra = {}) {
-  const config = DM_EMBED_CONFIG[command];
-  const title = `${config.emoji} @${targetUser.username} ${config.channelAction}`;
   return buildEmbedBase(
     command,
-    guild,
+    reason,
+    executor,
+    extra,
+    config.title,
+    `In **${guild.name}**`,
+    guild.iconURL()
+  );
+}
+
+// Cartel del canal donde se ejecutó el comando: título corto ("🧹 Softban")
+// y la descripción menciona al usuario afectado (ej. "@usuario was banned"),
+// con su avatar en vez del ícono del servidor.
+function buildChannelModEmbed(command, targetUser, guild, reason, executor, extra = {}) {
+  const config = DM_EMBED_CONFIG[command];
+  const title = `${config.emoji} ${COMMAND_LABELS[command]}`;
+  const description = `<@${targetUser.id}> ${config.channelAction}`;
+  return buildEmbedBase(
+    command,
     reason,
     executor,
     extra,
     title,
+    description,
     targetUser.displayAvatarURL({ size: 256 })
   );
 }
