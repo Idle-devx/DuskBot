@@ -70,7 +70,7 @@ The bot downloads the file, converts it with ffmpeg, and replies with the GIF. F
 - `/unmute usuario:[user]` — removes the mute before it expires.
 - `/unban usuario_id:[user ID] razon:[optional]` — unbans using the user's ID (since a banned user can't be selected from the member list).
 
-Ban, kick, softban, mute, and unban also try to send the affected user a direct message explaining what happened, the reason, and who took the action. If the user has DMs closed or doesn't share a server with the bot, this silently fails and the moderation action still goes through normally. You can change this wording by editing the `DM_PHRASES` object at the top of `index.js`.
+Ban, kick, softban, mute, and unban also try to send the affected user a direct message (styled as a Discord embed card, with a colored side bar, title, and fields) explaining what happened, the reason, and who took the action. If the user has DMs closed or doesn't share a server with the bot, this silently fails and the moderation action still goes through normally. You can change the titles, colors, or wording by editing the `DM_EMBED_CONFIG` object and the `buildModEmbed` function at the top of `index.js`.
 
 These commands require your role and the Bot's role to have the corresponding moderation permissions (Discord automatically hides them from members without the right permission). For the Bot to be able to moderate someone, its role must be **above** that person's role in the server's role list.
 
@@ -78,7 +78,7 @@ Each action posts a message visible to everyone in the channel, mentioning the a
 
 ### Random GIF replies
 
-If someone replies directly to a message from the Bot, it automatically responds with a random GIF from one of these categories (chosen at random): tsundere, cats, dogs, or seals. It uses Tenor's free API. No command needed, it's automatic. You can change the categories by editing the `GIF_CATEGORIES` array at the top of `index.js`.
+If someone replies directly to a message from the Bot, it automatically responds with a random GIF from one of these categories (chosen at random): tsundere, cats, dogs, or seals. It uses GIPHY's free API (100 requests/hour on a beta key, plenty for personal use). No command needed, it's automatic. You can change the categories by editing the `GIF_CATEGORIES` array at the top of `index.js`.
 
 ## Notes
 
