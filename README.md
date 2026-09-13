@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/32154808/README.md)
 # Discord Bot with AI (Groq)
 
 Discord bot that responds to the `/pregunta` command using Groq's free API (open-source models like Llama).
@@ -25,10 +24,10 @@ Discord bot that responds to the `/pregunta` command using Groq's free API (open
 
    - `DISCORD_TOKEN`: your bot's token (Discord portal > your app > Bot > Reset Token).
    - `DISCORD_CLIENT_ID`: Application ID (Discord portal > your app > General Information).
-   - `DISCORD_GUILD_ID`: your server's ID (right-click your server icon > Copy Server ID, requires Developer Mode enabled in Discord).
+   - `DISCORD_GUILD_ID`: your server's ID (right-click your server icon > Copy Server ID, requires Developer Mode enabled in Discord). No longer used for command registration (commands are now global), kept in case you need it later.
    - `GROQ_API_KEY`: your free Groq API key.
 
-3. Register the slash commands on your server (only needed once, or whenever you change a command):
+3. Register the slash commands globally, so they work on any server the bot joins (only needed once, or whenever you change a command — can take up to 1 hour to propagate the first time):
 
    ```bash
    npm run deploy
@@ -69,6 +68,9 @@ The bot downloads the file, converts it with ffmpeg, and replies with the GIF. F
 - `/softban usuario:[user] razon:[optional] dias_borrado:[optional, default 1]` — bans and immediately unbans. **This already wipes the user's recent messages** (based on the days set in `dias_borrado`) since it technically bans them for an instant before unbanning; the user can rejoin with a new invite.
 - `/mute usuario:[user] minutos:[1-40320] razon:[optional]` — mutes (Discord's native timeout) for the given time.
 - `/unmute usuario:[user]` — removes the mute before it expires.
+- `/unban usuario_id:[user ID] razon:[optional]` — unbans using the user's ID (since a banned user can't be selected from the member list).
+
+Ban, kick, softban, mute, and unban also try to send the affected user a direct message explaining what happened, the reason, and who took the action. If the user has DMs closed or doesn't share a server with the bot, this silently fails and the moderation action still goes through normally. You can change this wording by editing the `DM_PHRASES` object at the top of `index.js`.
 
 These commands require your role and the Bot's role to have the corresponding moderation permissions (Discord automatically hides them from members without the right permission). For the Bot to be able to moderate someone, its role must be **above** that person's role in the server's role list.
 
