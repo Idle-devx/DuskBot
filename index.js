@@ -24,12 +24,40 @@ const MOD_PHRASES = {
   softban: "{target} was token logged by {executor} 🧹",
   mute: "{target} was silenced by {executor} 🔇",
   unmute: "{target} got their voice back thanks to {executor} 🔊",
+  unban: "{target} was freed from Ban Island by {executor} 🕊️",
 };
 
 function formatModPhrase(command, target, executor) {
   return MOD_PHRASES[command]
     .replace("{target}", `<@${target.id}>`)
     .replace("{executor}", `<@${executor.id}>`);
+}
+
+// Avisos por mensaje directo (DM) al usuario afectado.
+// Cámbialos aquí si quieres otro texto.
+const DM_PHRASES = {
+  ban: "You were banned from **{guild}**.\nReason: {reason}\nAction taken by: {executor}",
+  kick: "You were kicked from **{guild}**.\nReason: {reason}\nAction taken by: {executor}",
+  softban: "You were softbanned from **{guild}** (your recent messages were wiped).\nReason: {reason}\nAction taken by: {executor}",
+  mute: "You were muted in **{guild}** for {duration} minutes.\nReason: {reason}\nAction taken by: {executor}",
+  unban: "You were unbanned from **{guild}**.\nReason: {reason}\nAction taken by: {executor}",
+};
+
+async function notifyUserByDM(command, targetUser, guild, reason, executor, extra = {}) {
+  let text = DM_PHRASES[command]
+    .replace("{guild}", guild.name)
+    .replace("{reason}", reason)
+    .replace("{executor}", executor.tag);
+
+  if (extra.duration) text = text.replace("{duration}", extra.duration);
+
+  try {
+    await targetUser.send(text);
+  } catch (error) {
+    // El usuario puede tener los DMs cerrados o no compartir servidor;
+    // no es un error crítico, simplemente no se le pudo avisar.
+    console.log(`No se pudo enviar DM a ${targetUser.tag}: ${error.message}`);
+  }
 }
 
 // Memoria simple por canal: guarda los últimos turnos para dar continuidad
@@ -177,15 +205,38 @@ client.on("interactionCreate", async (interaction) => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  const moderationCommands = ["ban", "kick", "softban", "mute", "unmute"];
+  const moderationCommands = ["ban", "kick", "softban", "mute", "unmute", "unban"];
   if (!moderationCommands.includes(interaction.commandName)) return;
 
-  const targetUser = interaction.options.getUser("usuario", true);
   const reason = interaction.options.getString("razon") ?? "Sin razón especificada";
+
+  // /unban es distinto: no hay un usuario "en el servidor" que seleccionar,
+  // así que se maneja aparte usando el ID que escribió quien ejecuta el comando.
+  if (interaction.commandName === "unban") {
+    const userId = interaction.options.getString("usuario_id", true);
+    try {
+      const bannedUser = await interaction.client.users.fetch(userId);
+      await interaction.guild.members.unban(userId, reason);
+      await notifyUserByDM("unban", bannedUser, interaction.guild, reason, interaction.user);
+      await interaction.reply(
+        `${formatModPhrase("unban", bannedUser, interaction.user)}\nReason: ${reason}`
+      );
+    } catch (error) {
+      console.error("Error ejecutando /unban:", error);
+      await interaction.reply({
+        content: "No se pudo desbanear a ese usuario. Revisa que el ID sea correcto y que esté baneado.",
+        ephemeral: true,
+      });
+    }
+    return;
+  }
+
+  const targetUser = interaction.options.getUser("usuario", true);
 
   try {
     if (interaction.commandName === "ban") {
       const deleteDays = interaction.options.getInteger("dias_borrado") ?? 0;
+      await notifyUserByDM("ban", targetUser, interaction.guild, reason, interaction.user);
       await interaction.guild.members.ban(targetUser.id, {
         deleteMessageSeconds: deleteDays * 86400,
         reason,
@@ -197,6 +248,7 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.commandName === "kick") {
       const member = await interaction.guild.members.fetch(targetUser.id);
+      await notifyUserByDM("kick", targetUser, interaction.guild, reason, interaction.user);
       await member.kick(reason);
       await interaction.reply(
         `${formatModPhrase("kick", targetUser, interaction.user)}\nReason: ${reason}`
@@ -207,6 +259,7 @@ client.on("interactionCreate", async (interaction) => {
       // El softban ya borra los mensajes recientes del usuario porque se banea
       // (con deleteMessageSeconds) y luego se desbanea de inmediato.
       const deleteDays = interaction.options.getInteger("dias_borrado") ?? 1;
+      await notifyUserByDM("softban", targetUser, interaction.guild, reason, interaction.user);
       await interaction.guild.members.ban(targetUser.id, {
         deleteMessageSeconds: deleteDays * 86400,
         reason: `Softban: ${reason}`,
@@ -220,6 +273,9 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.commandName === "mute") {
       const minutes = interaction.options.getInteger("minutos", true);
       const member = await interaction.guild.members.fetch(targetUser.id);
+      await notifyUserByDM("mute", targetUser, interaction.guild, reason, interaction.user, {
+        duration: minutes,
+      });
       await member.timeout(minutes * 60 * 1000, reason);
       await interaction.reply(
         `${formatModPhrase("mute", targetUser, interaction.user)}\nDuration: ${minutes} minutes. Reason: ${reason}`
