@@ -44,7 +44,10 @@ const DM_EMBED_CONFIG = {
   unban: { title: "🔓 You were unbanned", color: 0x57f287 },
 };
 
-function buildModEmbed(command, guild, reason, executor, extra = {}) {
+// thumbnailUrl es opcional: si no se pasa, se usa el ícono del servidor
+// (comportamiento original, usado en el DM). Para el cartel del canal,
+// le pasamos el avatar del usuario afectado en su lugar.
+function buildModEmbed(command, guild, reason, executor, extra = {}, thumbnailUrl = null) {
   const config = DM_EMBED_CONFIG[command];
 
   const embed = new EmbedBuilder()
@@ -61,10 +64,23 @@ function buildModEmbed(command, guild, reason, executor, extra = {}) {
     embed.addFields({ name: "Duration", value: `${extra.duration} minutes`, inline: true });
   }
 
-  const iconUrl = guild.iconURL();
-  if (iconUrl) embed.setThumbnail(iconUrl);
+  const finalThumbnail = thumbnailUrl ?? guild.iconURL();
+  if (finalThumbnail) embed.setThumbnail(finalThumbnail);
 
   return embed;
+}
+
+// Cartel para el canal donde se ejecutó el comando: igual que el de DM,
+// pero mostrando el avatar del usuario afectado en vez del ícono del servidor.
+function buildChannelModEmbed(command, targetUser, guild, reason, executor, extra = {}) {
+  return buildModEmbed(
+    command,
+    guild,
+    reason,
+    executor,
+    extra,
+    targetUser.displayAvatarURL({ size: 256 })
+  );
 }
 
 async function notifyUserByDM(command, targetUser, guild, reason, executor, extra = {}) {
@@ -250,9 +266,17 @@ client.on("interactionCreate", async (interaction) => {
       const bannedUser = await interaction.client.users.fetch(userId);
       await interaction.guild.members.unban(userId, reason);
       await notifyUserByDM("unban", bannedUser, interaction.guild, reason, interaction.user);
-      await interaction.reply(
-        `${formatModPhrase("unban", bannedUser, interaction.user)}\nReason: ${reason}`
+      const channelEmbed = buildChannelModEmbed(
+        "unban",
+        bannedUser,
+        interaction.guild,
+        reason,
+        interaction.user
       );
+      await interaction.reply({
+        content: `${formatModPhrase("unban", bannedUser, interaction.user)}\nReason: ${reason}`,
+        embeds: [channelEmbed],
+      });
     } catch (error) {
       console.error("Error ejecutando /unban:", error);
       await interaction.reply({
@@ -273,18 +297,34 @@ client.on("interactionCreate", async (interaction) => {
         deleteMessageSeconds: deleteDays * 86400,
         reason,
       });
-      await interaction.reply(
-        `${formatModPhrase("ban", targetUser, interaction.user)}\nReason: ${reason}`
+      const channelEmbed = buildChannelModEmbed(
+        "ban",
+        targetUser,
+        interaction.guild,
+        reason,
+        interaction.user
       );
+      await interaction.reply({
+        content: `${formatModPhrase("ban", targetUser, interaction.user)}\nReason: ${reason}`,
+        embeds: [channelEmbed],
+      });
     }
 
     if (interaction.commandName === "kick") {
       const member = await interaction.guild.members.fetch(targetUser.id);
       await notifyUserByDM("kick", targetUser, interaction.guild, reason, interaction.user);
       await member.kick(reason);
-      await interaction.reply(
-        `${formatModPhrase("kick", targetUser, interaction.user)}\nReason: ${reason}`
+      const channelEmbed = buildChannelModEmbed(
+        "kick",
+        targetUser,
+        interaction.guild,
+        reason,
+        interaction.user
       );
+      await interaction.reply({
+        content: `${formatModPhrase("kick", targetUser, interaction.user)}\nReason: ${reason}`,
+        embeds: [channelEmbed],
+      });
     }
 
     if (interaction.commandName === "softban") {
@@ -297,9 +337,17 @@ client.on("interactionCreate", async (interaction) => {
         reason: `Softban: ${reason}`,
       });
       await interaction.guild.members.unban(targetUser.id, "Softban - desbaneo automático");
-      await interaction.reply(
-        `${formatModPhrase("softban", targetUser, interaction.user)}\n(Recent messages were wiped, they can rejoin). Reason: ${reason}`
+      const channelEmbed = buildChannelModEmbed(
+        "softban",
+        targetUser,
+        interaction.guild,
+        reason,
+        interaction.user
       );
+      await interaction.reply({
+        content: `${formatModPhrase("softban", targetUser, interaction.user)}\n(Recent messages were wiped, they can rejoin). Reason: ${reason}`,
+        embeds: [channelEmbed],
+      });
     }
 
     if (interaction.commandName === "mute") {
@@ -309,9 +357,18 @@ client.on("interactionCreate", async (interaction) => {
         duration: minutes,
       });
       await member.timeout(minutes * 60 * 1000, reason);
-      await interaction.reply(
-        `${formatModPhrase("mute", targetUser, interaction.user)}\nDuration: ${minutes} minutes. Reason: ${reason}`
+      const channelEmbed = buildChannelModEmbed(
+        "mute",
+        targetUser,
+        interaction.guild,
+        reason,
+        interaction.user,
+        { duration: minutes }
       );
+      await interaction.reply({
+        content: `${formatModPhrase("mute", targetUser, interaction.user)}\nDuration: ${minutes} minutes. Reason: ${reason}`,
+        embeds: [channelEmbed],
+      });
     }
 
     if (interaction.commandName === "unmute") {
