@@ -416,6 +416,11 @@ client.on("interactionCreate", async (interaction) => {
   const canal = interaction.options.getChannel("canal", true);
   const titulo = interaction.options.getString("titulo", true);
   const contenido = interaction.options.getString("contenido", true);
+  const imagenes = [
+    interaction.options.getAttachment("imagen1"),
+    interaction.options.getAttachment("imagen2"),
+    interaction.options.getAttachment("imagen3"),
+  ].filter(Boolean);
 
   await interaction.deferReply({ ephemeral: true });
 
@@ -427,7 +432,10 @@ client.on("interactionCreate", async (interaction) => {
   try {
     const thread = await canal.threads.create({
       name: titulo,
-      message: { content: contenido },
+      message: {
+        content: contenido,
+        files: imagenes.map((attachment) => attachment.url),
+      },
     });
 
     await interaction.editReply(`✅ Publicación creada: ${thread.url}`);
