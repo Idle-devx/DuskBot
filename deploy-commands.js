@@ -6,11 +6,11 @@ import "dotenv/config";
 const commands = [
   new SlashCommandBuilder()
     .setName("pregunta")
-    .setDescription("Hazle una pregunta a la IA")
+    .setDescription("Hazle una pregunta a Claude")
     .addStringOption((option) =>
       option
         .setName("mensaje")
-        .setDescription("Lo que quieres preguntarle a la IA")
+        .setDescription("Lo que quieres preguntarle a Claude")
         .setRequired(true)
     ),
   new SlashCommandBuilder()
@@ -98,18 +98,41 @@ const commands = [
       option.setName("usuario").setDescription("Usuario a des-silenciar").setRequired(true)
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
+  new SlashCommandBuilder()
+    .setName("unban")
+    .setDescription("Desbanea a un usuario usando su ID")
+    .addStringOption((option) =>
+      option
+        .setName("usuario_id")
+        .setDescription("ID numérico del usuario a desbanear")
+        .setRequired(true)
+    )
+    .addStringOption((option) =>
+      option.setName("razon").setDescription("Razón del desbaneo")
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers),
+  new SlashCommandBuilder()
+    .setName("unban")
+    .setDescription("Desbanea a un usuario usando su ID")
+    .addStringOption((option) =>
+      option
+        .setName("usuario_id")
+        .setDescription("ID del usuario a desbanear")
+        .setRequired(true)
+    )
+    .addStringOption((option) =>
+      option.setName("razon").setDescription("Razón del desbaneo")
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers),
 ].map((command) => command.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 
 try {
-  console.log("Registrando comandos slash...");
+  console.log("Registrando comandos slash (globales, pueden tardar hasta 1 hora en propagarse)...");
 
   await rest.put(
-    Routes.applicationGuildCommands(
-      process.env.DISCORD_CLIENT_ID,
-      process.env.DISCORD_GUILD_ID
-    ),
+    Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
     { body: commands }
   );
 
