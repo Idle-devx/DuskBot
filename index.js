@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, AttachmentBuilder } from "discord.js";
+import { Client, GatewayIntentBits, AttachmentBuilder, PermissionFlagsBits } from "discord.js";
 import Groq from "groq-sdk";
 import ffmpegPath from "ffmpeg-static";
 import ffmpeg from "fluent-ffmpeg";
@@ -12,8 +12,25 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
 });
+
+// Frases estilo "meme" para los anuncios públicos de moderación.
+// Cámbialas aquí si quieres otro texto — {target} y {executor} se
+// reemplazan automáticamente por las menciones correspondientes.
+const MOD_PHRASES = {
+  ban: "{target} was sent to Ban Island by {executor} 🔨",
+  kick: "{target} got kicked out by {executor} 👢",
+  softban: "{target} was token logged by {executor} 🧹",
+  mute: "{target} was silenced by {executor} 🔇",
+  unmute: "{target} got their voice back thanks to {executor} 🔊",
+};
+
+function formatModPhrase(command, target, executor) {
+  return MOD_PHRASES[command]
+    .replace("{target}", `<@${target.id}>`)
+    .replace("{executor}", `<@${executor.id}>`);
+}
 
 // Memoria simple por canal: guarda los últimos turnos para dar continuidad
 // a la conversación. Se pierde si el bot se reinicia (no es persistente).
@@ -152,6 +169,117 @@ client.on("interactionCreate", async (interaction) => {
     if (tempDir) {
       await rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
+  }
+});
+
+// --- Moderación ---
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const moderationCommands = ["ban", "kick", "softban", "mute", "unmute"];
+  if (!moderationCommands.includes(interaction.commandName)) return;
+
+  const targetUser = interaction.options.getUser("usuario", true);
+  const reason = interaction.options.getString("razon") ?? "Sin razón especificada";
+
+  try {
+    if (interaction.commandName === "ban") {
+      const deleteDays = interaction.options.getInteger("dias_borrado") ?? 0;
+      await interaction.guild.members.ban(targetUser.id, {
+        deleteMessageSeconds: deleteDays * 86400,
+        reason,
+      });
+      await interaction.reply(
+        `${formatModPhrase("ban", targetUser, interaction.user)}\nReason: ${reason}`
+      );
+    }
+
+    if (interaction.commandName === "kick") {
+      const member = await interaction.guild.members.fetch(targetUser.id);
+      await member.kick(reason);
+      await interaction.reply(
+        `${formatModPhrase("kick", targetUser, interaction.user)}\nReason: ${reason}`
+      );
+    }
+
+    if (interaction.commandName === "softban") {
+      // El softban ya borra los mensajes recientes del usuario porque se banea
+      // (con deleteMessageSeconds) y luego se desbanea de inmediato.
+      const deleteDays = interaction.options.getInteger("dias_borrado") ?? 1;
+      await interaction.guild.members.ban(targetUser.id, {
+        deleteMessageSeconds: deleteDays * 86400,
+        reason: `Softban: ${reason}`,
+      });
+      await interaction.guild.members.unban(targetUser.id, "Softban - desbaneo automático");
+      await interaction.reply(
+        `${formatModPhrase("softban", targetUser, interaction.user)}\n(Recent messages were wiped, they can rejoin). Reason: ${reason}`
+      );
+    }
+
+    if (interaction.commandName === "mute") {
+      const minutes = interaction.options.getInteger("minutos", true);
+      const member = await interaction.guild.members.fetch(targetUser.id);
+      await member.timeout(minutes * 60 * 1000, reason);
+      await interaction.reply(
+        `${formatModPhrase("mute", targetUser, interaction.user)}\nDuration: ${minutes} minutes. Reason: ${reason}`
+      );
+    }
+
+    if (interaction.commandName === "unmute") {
+      const member = await interaction.guild.members.fetch(targetUser.id);
+      await member.timeout(null, reason);
+      await interaction.reply(formatModPhrase("unmute", targetUser, interaction.user));
+    }
+  } catch (error) {
+    console.error(`Error ejecutando /${interaction.commandName}:`, error);
+    const message =
+      error.code === 50013
+        ? "No tengo permisos suficientes para hacer eso (revisa que mi rol esté por encima del usuario objetivo)."
+        : "Ocurrió un error al ejecutar el comando.";
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp({ content: message, ephemeral: true });
+    } else {
+      await interaction.reply({ content: message, ephemeral: true });
+    }
+  }
+});
+
+// --- Respuesta con GIFs aleatorios ---
+
+const GIF_CATEGORIES = ["tsundere", "cats", "dogs", "seals"];
+
+async function getRandomGif() {
+  const category = GIF_CATEGORIES[Math.floor(Math.random() * GIF_CATEGORIES.length)];
+
+  const url = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(
+    category
+  )}&key=${process.env.TENOR_API_KEY}&limit=50&media_filter=gif&contentfilter=medium`;
+
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Tenor respondió con estado ${response.status}`);
+
+  const data = await response.json();
+  if (!data.results || data.results.length === 0) return null;
+
+  const randomResult = data.results[Math.floor(Math.random() * data.results.length)];
+  return randomResult.media_formats.gif.url;
+}
+
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
+  if (!message.reference) return;
+
+  try {
+    const referenced = await message.fetchReference();
+    if (referenced.author.id !== client.user.id) return;
+
+    const gifUrl = await getRandomGif();
+    if (gifUrl) {
+      await message.reply(gifUrl);
+    }
+  } catch (error) {
+    console.error("Error al responder con GIF:", error);
   }
 });
 
