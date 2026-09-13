@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, AttachmentBuilder, PermissionFlagsBits, EmbedBuilder } from "discord.js";
+import { Client, GatewayIntentBits, AttachmentBuilder, PermissionFlagsBits, EmbedBuilder, ChannelType } from "discord.js";
 import Groq from "groq-sdk";
 import ffmpegPath from "ffmpeg-static";
 import ffmpeg from "fluent-ffmpeg";
@@ -404,6 +404,40 @@ client.on("interactionCreate", async (interaction) => {
     } else {
       await interaction.reply({ content: message, ephemeral: true });
     }
+  }
+});
+
+// --- Publicaciones en foro ---
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== "foro") return;
+
+  const canal = interaction.options.getChannel("canal", true);
+  const titulo = interaction.options.getString("titulo", true);
+  const contenido = interaction.options.getString("contenido", true);
+
+  await interaction.deferReply({ ephemeral: true });
+
+  if (canal.type !== ChannelType.GuildForum) {
+    await interaction.editReply("El canal seleccionado no es un canal de foro.");
+    return;
+  }
+
+  try {
+    const thread = await canal.threads.create({
+      name: titulo,
+      message: { content: contenido },
+    });
+
+    await interaction.editReply(`✅ Publicación creada: ${thread.url}`);
+  } catch (error) {
+    console.error("Error creando publicación en el foro:", error);
+    const message =
+      error.code === 50013
+        ? "No tengo permisos suficientes para publicar ahí (revisa que pueda crear hilos y enviar mensajes en ese foro)."
+        : "Ocurrió un error al crear la publicación. Si el foro requiere etiquetas obligatorias, este comando aún no las soporta.";
+    await interaction.editReply(message);
   }
 });
 
