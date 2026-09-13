@@ -1,6 +1,6 @@
 // Este script registra el comando /pregunta en tu servidor de Discord.
 // Solo necesitas correrlo una vez (o cada vez que cambies la definición del comando).
-import { REST, Routes, SlashCommandBuilder, PermissionFlagsBits } from "discord.js";
+import { REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ChannelType } from "discord.js";
 import "dotenv/config";
 
 const commands = [
@@ -111,6 +111,31 @@ const commands = [
       option.setName("razon").setDescription("Razón del desbaneo")
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers),
+  new SlashCommandBuilder()
+    .setName("foro")
+    .setDescription("Crea una publicación en un canal de foro")
+    .addChannelOption((option) =>
+      option
+        .setName("canal")
+        .setDescription("Canal de foro donde se creará la publicación")
+        .addChannelTypes(ChannelType.GuildForum)
+        .setRequired(true)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("titulo")
+        .setDescription("Título de la publicación")
+        .setMaxLength(100)
+        .setRequired(true)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("contenido")
+        .setDescription("Texto de la publicación (máximo 2000 caracteres)")
+        .setMaxLength(2000)
+        .setRequired(true)
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 ].map((command) => command.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
