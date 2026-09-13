@@ -21,7 +21,7 @@ const client = new Client({
 const MOD_PHRASES = {
   ban: "{target} was sent to Ban Island by {executor} 🔨",
   kick: "{target} got kicked out by {executor} 👢",
-  softban: "{target} was token logged by {executor} 🧹",
+  softban: "{target} was softbanned by {executor} 🧹",
   mute: "{target} was silenced by {executor} 🔇",
   unmute: "{target} got their voice back thanks to {executor} 🔊",
   unban: "{target} was freed from Ban Island by {executor} 🕊️",
@@ -37,22 +37,21 @@ function formatModPhrase(command, target, executor) {
 // embed (tarjeta con color, título y campos). Cambia el título, color o
 // emoji aquí si quieres otro estilo.
 const DM_EMBED_CONFIG = {
-  ban: { title: "🔨 You were banned", color: 0xed4245 },
-  kick: { title: "👢 You were kicked", color: 0xfaa61a },
-  softban: { title: "🧹 You were softbanned", color: 0x9b59b6 },
-  mute: { title: "🔇 You were muted", color: 0xfee75c },
-  unban: { title: "🔓 You were unbanned", color: 0x57f287 },
+  ban: { emoji: "🔨", title: "🔨 You were banned", channelAction: "was banned", color: 0xed4245 },
+  kick: { emoji: "👢", title: "👢 You were kicked", channelAction: "was kicked", color: 0xfaa61a },
+  softban: { emoji: "🧹", title: "🧹 You were softbanned", channelAction: "was softbanned", color: 0x9b59b6 },
+  mute: { emoji: "🔇", title: "🔇 You were muted", channelAction: "was muted", color: 0xfee75c },
+  unban: { emoji: "🔓", title: "🔓 You were unbanned", channelAction: "was unbanned", color: 0x57f287 },
 };
 
-// thumbnailUrl es opcional: si no se pasa, se usa el ícono del servidor
-// (comportamiento original, usado en el DM). Para el cartel del canal,
-// le pasamos el avatar del usuario afectado en su lugar.
-function buildModEmbed(command, guild, reason, executor, extra = {}, thumbnailUrl = null) {
+// Builder genérico usado tanto por el cartel de DM como por el del canal.
+// title y thumbnailUrl los decide cada función específica de más abajo.
+function buildEmbedBase(command, guild, reason, executor, extra, title, thumbnailUrl) {
   const config = DM_EMBED_CONFIG[command];
 
   const embed = new EmbedBuilder()
     .setColor(config.color)
-    .setTitle(config.title)
+    .setTitle(title)
     .setDescription(`In **${guild.name}**`)
     .addFields(
       { name: "Reason", value: reason || "No reason specified" },
@@ -64,21 +63,33 @@ function buildModEmbed(command, guild, reason, executor, extra = {}, thumbnailUr
     embed.addFields({ name: "Duration", value: `${extra.duration} minutes`, inline: true });
   }
 
-  const finalThumbnail = thumbnailUrl ?? guild.iconURL();
-  if (finalThumbnail) embed.setThumbnail(finalThumbnail);
+  if (extra.note) {
+    embed.addFields({ name: "Note", value: extra.note });
+  }
+
+  if (thumbnailUrl) embed.setThumbnail(thumbnailUrl);
 
   return embed;
 }
 
-// Cartel para el canal donde se ejecutó el comando: igual que el de DM,
-// pero mostrando el avatar del usuario afectado en vez del ícono del servidor.
+// Cartel de DM: título genérico ("You were banned"), ícono del servidor.
+function buildModEmbed(command, guild, reason, executor, extra = {}) {
+  const config = DM_EMBED_CONFIG[command];
+  return buildEmbedBase(command, guild, reason, executor, extra, config.title, guild.iconURL());
+}
+
+// Cartel del canal donde se ejecutó el comando: título con el usuario
+// afectado (ej. "@usuario was banned") y su avatar en vez del ícono del servidor.
 function buildChannelModEmbed(command, targetUser, guild, reason, executor, extra = {}) {
-  return buildModEmbed(
+  const config = DM_EMBED_CONFIG[command];
+  const title = `${config.emoji} @${targetUser.username} ${config.channelAction}`;
+  return buildEmbedBase(
     command,
     guild,
     reason,
     executor,
     extra,
+    title,
     targetUser.displayAvatarURL({ size: 256 })
   );
 }
@@ -273,10 +284,7 @@ client.on("interactionCreate", async (interaction) => {
         reason,
         interaction.user
       );
-      await interaction.reply({
-        content: `${formatModPhrase("unban", bannedUser, interaction.user)}\nReason: ${reason}`,
-        embeds: [channelEmbed],
-      });
+      await interaction.reply({ embeds: [channelEmbed] });
     } catch (error) {
       console.error("Error ejecutando /unban:", error);
       await interaction.reply({
@@ -304,10 +312,7 @@ client.on("interactionCreate", async (interaction) => {
         reason,
         interaction.user
       );
-      await interaction.reply({
-        content: `${formatModPhrase("ban", targetUser, interaction.user)}\nReason: ${reason}`,
-        embeds: [channelEmbed],
-      });
+      await interaction.reply({ embeds: [channelEmbed] });
     }
 
     if (interaction.commandName === "kick") {
@@ -321,10 +326,7 @@ client.on("interactionCreate", async (interaction) => {
         reason,
         interaction.user
       );
-      await interaction.reply({
-        content: `${formatModPhrase("kick", targetUser, interaction.user)}\nReason: ${reason}`,
-        embeds: [channelEmbed],
-      });
+      await interaction.reply({ embeds: [channelEmbed] });
     }
 
     if (interaction.commandName === "softban") {
@@ -342,12 +344,10 @@ client.on("interactionCreate", async (interaction) => {
         targetUser,
         interaction.guild,
         reason,
-        interaction.user
+        interaction.user,
+        { note: "Recent messages were wiped, they can rejoin." }
       );
-      await interaction.reply({
-        content: `${formatModPhrase("softban", targetUser, interaction.user)}\n(Recent messages were wiped, they can rejoin). Reason: ${reason}`,
-        embeds: [channelEmbed],
-      });
+      await interaction.reply({ embeds: [channelEmbed] });
     }
 
     if (interaction.commandName === "mute") {
@@ -365,10 +365,7 @@ client.on("interactionCreate", async (interaction) => {
         interaction.user,
         { duration: minutes }
       );
-      await interaction.reply({
-        content: `${formatModPhrase("mute", targetUser, interaction.user)}\nDuration: ${minutes} minutes. Reason: ${reason}`,
-        embeds: [channelEmbed],
-      });
+      await interaction.reply({ embeds: [channelEmbed] });
     }
 
     if (interaction.commandName === "unmute") {
