@@ -6,11 +6,11 @@ import "dotenv/config";
 const commands = [
   new SlashCommandBuilder()
     .setName("pregunta")
-    .setDescription("Hazle una pregunta a Claude")
+    .setDescription("Hazle una pregunta a la IA")
     .addStringOption((option) =>
       option
         .setName("mensaje")
-        .setDescription("Lo que quieres preguntarle a Claude")
+        .setDescription("Lo que quieres preguntarle a la IA")
         .setRequired(true)
     ),
   new SlashCommandBuilder()
