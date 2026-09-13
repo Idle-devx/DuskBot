@@ -111,19 +111,6 @@ const commands = [
       option.setName("razon").setDescription("Razón del desbaneo")
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers),
-  new SlashCommandBuilder()
-    .setName("unban")
-    .setDescription("Desbanea a un usuario usando su ID")
-    .addStringOption((option) =>
-      option
-        .setName("usuario_id")
-        .setDescription("ID del usuario a desbanear")
-        .setRequired(true)
-    )
-    .addStringOption((option) =>
-      option.setName("razon").setDescription("Razón del desbaneo")
-    )
-    .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers),
 ].map((command) => command.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
@@ -139,4 +126,7 @@ try {
   console.log("¡Comandos registrados con éxito!");
 } catch (error) {
   console.error(error);
+  // Sin esto, un error aquí no marca la GitHub Action como fallida,
+  // y puede pasar desapercibido (como ocurrió con el /unban duplicado).
+  process.exitCode = 1;
 }
