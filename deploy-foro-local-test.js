@@ -45,6 +45,15 @@ const commands = [
         .setMaxLength(2000)
         .setRequired(true)
     )
+    .addAttachmentOption((option) =>
+      option.setName("imagen1").setDescription("Imagen opcional para la publicación")
+    )
+    .addAttachmentOption((option) =>
+      option.setName("imagen2").setDescription("Otra imagen opcional")
+    )
+    .addAttachmentOption((option) =>
+      option.setName("imagen3").setDescription("Otra imagen opcional")
+    )
     .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 ].map((command) => command.toJSON());
 
