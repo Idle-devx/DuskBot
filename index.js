@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, AttachmentBuilder, PermissionFlagsBits } from "discord.js";
+import { Client, GatewayIntentBits, AttachmentBuilder, PermissionFlagsBits, EmbedBuilder } from "discord.js";
 import Groq from "groq-sdk";
 import ffmpegPath from "ffmpeg-static";
 import ffmpeg from "fluent-ffmpeg";
@@ -33,26 +33,45 @@ function formatModPhrase(command, target, executor) {
     .replace("{executor}", `<@${executor.id}>`);
 }
 
-// Avisos por mensaje directo (DM) al usuario afectado.
-// Cámbialos aquí si quieres otro texto.
-const DM_PHRASES = {
-  ban: "You were banned from **{guild}**.\nReason: {reason}\nAction taken by: {executor}",
-  kick: "You were kicked from **{guild}**.\nReason: {reason}\nAction taken by: {executor}",
-  softban: "You were softbanned from **{guild}** (your recent messages were wiped).\nReason: {reason}\nAction taken by: {executor}",
-  mute: "You were muted in **{guild}** for {duration} minutes.\nReason: {reason}\nAction taken by: {executor}",
-  unban: "You were unbanned from **{guild}**.\nReason: {reason}\nAction taken by: {executor}",
+// Avisos por mensaje directo (DM) al usuario afectado, con formato de
+// embed (tarjeta con color, título y campos). Cambia el título, color o
+// emoji aquí si quieres otro estilo.
+const DM_EMBED_CONFIG = {
+  ban: { title: "🔨 You were banned", color: 0xed4245 },
+  kick: { title: "👢 You were kicked", color: 0xfaa61a },
+  softban: { title: "🧹 You were softbanned", color: 0x9b59b6 },
+  mute: { title: "🔇 You were muted", color: 0xfee75c },
+  unban: { title: "🔓 You were unbanned", color: 0x57f287 },
 };
 
-async function notifyUserByDM(command, targetUser, guild, reason, executor, extra = {}) {
-  let text = DM_PHRASES[command]
-    .replace("{guild}", guild.name)
-    .replace("{reason}", reason)
-    .replace("{executor}", executor.tag);
+function buildModEmbed(command, guild, reason, executor, extra = {}) {
+  const config = DM_EMBED_CONFIG[command];
 
-  if (extra.duration) text = text.replace("{duration}", extra.duration);
+  const embed = new EmbedBuilder()
+    .setColor(config.color)
+    .setTitle(config.title)
+    .setDescription(`In **${guild.name}**`)
+    .addFields(
+      { name: "Reason", value: reason || "No reason specified" },
+      { name: "Action taken by", value: executor.tag, inline: true }
+    )
+    .setTimestamp();
+
+  if (extra.duration) {
+    embed.addFields({ name: "Duration", value: `${extra.duration} minutes`, inline: true });
+  }
+
+  const iconUrl = guild.iconURL();
+  if (iconUrl) embed.setThumbnail(iconUrl);
+
+  return embed;
+}
+
+async function notifyUserByDM(command, targetUser, guild, reason, executor, extra = {}) {
+  const embed = buildModEmbed(command, guild, reason, executor, extra);
 
   try {
-    await targetUser.send(text);
+    await targetUser.send({ embeds: [embed] });
   } catch (error) {
     // El usuario puede tener los DMs cerrados o no compartir servidor;
     // no es un error crítico, simplemente no se le pudo avisar.
@@ -140,14 +159,21 @@ client.on("interactionCreate", async (interaction) => {
 // Tamaño máximo de archivo de entrada que aceptamos descargar (25 MB)
 const MAX_INPUT_SIZE = 25 * 1024 * 1024;
 
-async function convertToGif(inputPath, outputPath, { duration, width }) {
+async function convertToGif(inputPath, outputPath, { duration, width, isStaticImage }) {
   return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
+    const command = ffmpeg(inputPath);
+
+    // Las imágenes estáticas necesitan "-loop 1" para que ffmpeg las trate
+    // como un video continuo; sin esto, la conversión falla o produce un
+    // archivo vacío. Los videos y GIFs animados no lo necesitan.
+    if (isStaticImage) {
+      command.inputOptions(["-loop 1"]);
+    }
+
+    command
       .setStartTime(0)
       .duration(duration)
-      .outputOptions([
-        `-vf scale=${width}:-1:flags=lanczos,fps=12`,
-      ])
+      .outputOptions([`-vf scale=${width}:-1:flags=lanczos,fps=12`])
       .toFormat("gif")
       .on("end", resolve)
       .on("error", reject)
@@ -184,7 +210,13 @@ client.on("interactionCreate", async (interaction) => {
     const buffer = Buffer.from(await response.arrayBuffer());
     await writeFile(inputPath, buffer);
 
-    await convertToGif(inputPath, outputPath, { duration, width });
+    // GIFs animados y videos ya son "continuos", no necesitan -loop 1;
+    // solo las imágenes estáticas (png, jpg, webp, etc.) sí lo necesitan.
+    const isStaticImage =
+      (attachment.contentType?.startsWith("image/") ?? false) &&
+      attachment.contentType !== "image/gif";
+
+    await convertToGif(inputPath, outputPath, { duration, width, isStaticImage });
 
     const gifAttachment = new AttachmentBuilder(outputPath, { name: "resultado.gif" });
     await interaction.editReply({ files: [gifAttachment] });
@@ -308,18 +340,15 @@ const GIF_CATEGORIES = ["tsundere", "cats", "dogs", "seals"];
 async function getRandomGif() {
   const category = GIF_CATEGORIES[Math.floor(Math.random() * GIF_CATEGORIES.length)];
 
-  const url = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(
+  const url = `https://api.giphy.com/v1/gifs/random?api_key=${process.env.GIPHY_API_KEY}&tag=${encodeURIComponent(
     category
-  )}&key=${process.env.TENOR_API_KEY}&limit=50&media_filter=gif&contentfilter=medium`;
+  )}&rating=pg-13`;
 
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`Tenor respondió con estado ${response.status}`);
+  if (!response.ok) throw new Error(`Giphy respondió con estado ${response.status}`);
 
   const data = await response.json();
-  if (!data.results || data.results.length === 0) return null;
-
-  const randomResult = data.results[Math.floor(Math.random() * data.results.length)];
-  return randomResult.media_formats.gif.url;
+  return data.data?.images?.original?.url ?? null;
 }
 
 client.on("messageCreate", async (message) => {
