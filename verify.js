@@ -140,6 +140,11 @@ export function registerVerifyHandlers(client) {
 
   // --- New member joins: start tracking them as pending ---
   client.on("guildMemberAdd", async (member) => {
+    // Bots are added deliberately via OAuth by someone with Manage Server
+    // permission — they can't click the verify button, so don't track them
+    // (otherwise they'd get auto-kicked after kick_hours for no reason).
+    if (member.user.bot) return;
+
     try {
       const config = await getConfig(member.guild.id);
       if (!config) return; // verification not set up on this server
