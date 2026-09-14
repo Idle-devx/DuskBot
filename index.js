@@ -22,24 +22,6 @@ const client = new Client({
 
 registerTicketHandlers(client);
 
-// "Meme"-style phrases for public moderation announcements.
-// Change them here if you want different text — {target} and {executor}
-// get automatically replaced with the corresponding mentions.
-const MOD_PHRASES = {
-  ban: "{target} was sent to Ban Island by {executor} 🔨",
-  kick: "{target} got kicked out by {executor} 👢",
-  softban: "{target} was softbanned by {executor} 🧹",
-  mute: "{target} was silenced by {executor} 🔇",
-  unmute: "{target} got their voice back thanks to {executor} 🔊",
-  unban: "{target} was freed from Ban Island by {executor} 🕊️",
-};
-
-function formatModPhrase(command, target, executor) {
-  return MOD_PHRASES[command]
-    .replace("{target}", `<@${target.id}>`)
-    .replace("{executor}", `<@${executor.id}>`);
-}
-
 // Direct message (DM) notices to the affected user, styled as an embed
 // (card with color, title, and fields). Change the title, color, or emoji
 // here if you want a different style.
@@ -48,6 +30,7 @@ const DM_EMBED_CONFIG = {
   kick: { emoji: "👢", title: "👢 You were kicked", channelAction: "was kicked", color: 0xfaa61a },
   softban: { emoji: "🧹", title: "🧹 You were softbanned", channelAction: "was softbanned", color: 0x9b59b6 },
   mute: { emoji: "🔇", title: "🔇 You were muted", channelAction: "was muted", color: 0xfee75c },
+  unmute: { emoji: "🔊", title: "🔊 Your timeout was removed", channelAction: "was unmuted", color: 0x57f287 },
   unban: { emoji: "🔓", title: "🔓 You were unbanned", channelAction: "was unbanned", color: 0x57f287 },
 };
 
@@ -58,8 +41,98 @@ const COMMAND_LABELS = {
   kick: "Kick",
   softban: "Softban",
   mute: "Mute",
+  unmute: "Unmute",
   unban: "Unban",
 };
+
+// --- Moderation log channel (set via /modlogs-setup) ---
+
+const MODLOG_CONFIG_PATH = join(__dirname, "modlogs-config.json");
+
+async function loadJSON(path) {
+  if (!existsSync(path)) return {};
+  try {
+    return JSON.parse(await readFile(path, "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+async function saveJSON(path, data) {
+  await writeFile(path, JSON.stringify(data, null, 2), "utf-8");
+}
+
+async function getModLogConfig(guildId) {
+  const config = await loadJSON(MODLOG_CONFIG_PATH);
+  return config[guildId] ?? null;
+}
+
+async function setModLogConfig(guildId, partial) {
+  const config = await loadJSON(MODLOG_CONFIG_PATH);
+  config[guildId] = { ...(config[guildId] ?? {}), ...partial };
+  await saveJSON(MODLOG_CONFIG_PATH, config);
+  return config[guildId];
+}
+
+// Full sentence shown as the log message's plain-text content, above the embed.
+const LOG_ANNOUNCE = {
+  ban: "A user has been banned.",
+  kick: "A user has been kicked.",
+  softban: "A user has been softbanned.",
+  mute: "A user has been muted.",
+  unmute: "A user has had their timeout removed.",
+  unban: "A user has been unbanned.",
+};
+
+// Title used in the log embed, e.g. "User Banned", "User Unbanned".
+const LOG_TITLES = {
+  ban: "User Banned",
+  kick: "User Kicked",
+  softban: "User Softbanned",
+  mute: "User Muted",
+  unmute: "User Unmuted",
+  unban: "User Unbanned",
+};
+
+// Log-channel embed: plain fields (User / User ID / Staff / Reason), no
+// avatar thumbnail, matching a simple audit-log style.
+function buildLogEmbed(command, targetUser, reason, executor, extra = {}) {
+  const config = DM_EMBED_CONFIG[command];
+
+  const embed = new EmbedBuilder()
+    .setColor(config.color)
+    .setTitle(LOG_TITLES[command])
+    .addFields(
+      { name: "User", value: `<@${targetUser.id}> (${targetUser.tag})` },
+      { name: "User ID", value: targetUser.id },
+      { name: "Staff", value: `<@${executor.id}>` },
+      { name: "Reason", value: reason || "No reason specified" }
+    )
+    .setTimestamp();
+
+  if (extra.duration) {
+    embed.addFields({ name: "Duration", value: `${extra.duration} minutes` });
+  }
+
+  return embed;
+}
+
+// Sends the log embed to the guild's configured mod-log channel, if any.
+// Silently does nothing if /modlogs-setup hasn't been run for this guild.
+async function sendModLog(command, targetUser, guild, reason, executor, extra = {}) {
+  const logConfig = await getModLogConfig(guild.id);
+  if (!logConfig?.logChannelId) return;
+
+  const logChannel = await guild.channels.fetch(logConfig.logChannelId).catch(() => null);
+  if (!logChannel) return;
+
+  await logChannel
+    .send({
+      content: LOG_ANNOUNCE[command],
+      embeds: [buildLogEmbed(command, targetUser, reason, executor, extra)],
+    })
+    .catch((error) => console.error("Error sending mod log:", error));
+}
 
 // Generic builder used by both the DM card and the channel card.
 // title and description are decided by each specific function below.
@@ -360,6 +433,7 @@ client.on("interactionCreate", async (interaction) => {
         interaction.user
       );
       await interaction.reply({ embeds: [channelEmbed] });
+      await sendModLog("unban", bannedUser, interaction.guild, reason, interaction.user);
     } catch (error) {
       console.error("Error running /unban:", error);
       await interaction.reply({
@@ -388,6 +462,7 @@ client.on("interactionCreate", async (interaction) => {
         interaction.user
       );
       await interaction.reply({ embeds: [channelEmbed] });
+      await sendModLog("ban", targetUser, interaction.guild, reason, interaction.user);
     }
 
     if (interaction.commandName === "kick") {
@@ -402,6 +477,7 @@ client.on("interactionCreate", async (interaction) => {
         interaction.user
       );
       await interaction.reply({ embeds: [channelEmbed] });
+      await sendModLog("kick", targetUser, interaction.guild, reason, interaction.user);
     }
 
     if (interaction.commandName === "softban") {
@@ -423,6 +499,9 @@ client.on("interactionCreate", async (interaction) => {
         { note: "Recent messages were wiped, they can rejoin." }
       );
       await interaction.reply({ embeds: [channelEmbed] });
+      await sendModLog("softban", targetUser, interaction.guild, reason, interaction.user, {
+        note: "Recent messages were wiped, they can rejoin.",
+      });
     }
 
     if (interaction.commandName === "mute") {
@@ -441,12 +520,21 @@ client.on("interactionCreate", async (interaction) => {
         { duration: minutes }
       );
       await interaction.reply({ embeds: [channelEmbed] });
+      await sendModLog("mute", targetUser, interaction.guild, reason, interaction.user, { duration: minutes });
     }
 
     if (interaction.commandName === "unmute") {
       const member = await interaction.guild.members.fetch(targetUser.id);
       await member.timeout(null, reason);
-      await interaction.reply(formatModPhrase("unmute", targetUser, interaction.user));
+      const channelEmbed = buildChannelModEmbed(
+        "unmute",
+        targetUser,
+        interaction.guild,
+        reason,
+        interaction.user
+      );
+      await interaction.reply({ embeds: [channelEmbed] });
+      await sendModLog("unmute", targetUser, interaction.guild, reason, interaction.user);
     }
   } catch (error) {
     console.error(`Error running /${interaction.commandName}:`, error);
@@ -459,6 +547,27 @@ client.on("interactionCreate", async (interaction) => {
     } else {
       await interaction.reply({ content: message, ephemeral: true });
     }
+  }
+});
+
+// --- Moderation log channel setup ---
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== "modlogs-setup") return;
+
+  const logChannel = interaction.options.getChannel("log_channel", true);
+
+  await interaction.deferReply({ ephemeral: true });
+
+  try {
+    await setModLogConfig(interaction.guild.id, { logChannelId: logChannel.id });
+    await interaction.editReply(
+      `✅ Moderation logs (ban/kick/softban/mute/unmute/unban) will now be sent to <#${logChannel.id}>.`
+    );
+  } catch (error) {
+    console.error("Error setting up modlogs:", error);
+    await interaction.editReply("An error occurred saving the log channel. Check my permissions there.");
   }
 });
 
