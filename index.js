@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import "dotenv/config";
 import { registerTicketHandlers } from "./tickets.js";
 import { registerVerifyHandlers } from "./verify.js";
+import { registerAntiRaidHandlers } from "./antiraid.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -31,6 +32,7 @@ const client = new Client({
 
 registerTicketHandlers(client);
 registerVerifyHandlers(client);
+registerAntiRaidHandlers(client);
 
 // Direct message (DM) notices to the affected user, styled as an embed
 // (card with color, title, and fields). Change the title, color, or emoji
