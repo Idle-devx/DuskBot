@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import "dotenv/config";
+import { registerTicketHandlers } from "./tickets.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -18,6 +19,8 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
 });
+
+registerTicketHandlers(client);
 
 // "Meme"-style phrases for public moderation announcements.
 // Change them here if you want different text — {target} and {executor}
