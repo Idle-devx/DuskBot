@@ -1,7 +1,9 @@
 // Ticket system: a persistent panel with a button lets users open a ticket
 // through a category dropdown; each ticket becomes a private channel with a
 // "Close Ticket" button that saves a transcript to a log channel and then
-// deletes the channel.
+// deletes the channel. Tickets also get an inactivity alert after a
+// configurable number of hours, and auto-close after a configurable number
+// of hours with zero activity.
 import {
   EmbedBuilder,
   ActionRowBuilder,
@@ -19,6 +21,14 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(__dirname, "tickets-config.json");
+const STATE_PATH = join(__dirname, "tickets-state.json");
+
+// How often the background checker runs (milliseconds).
+const CHECK_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
+
+// Defaults if a server hasn't customized them via /ticket-setup.
+const DEFAULT_ALERT_HOURS = 3;
+const DEFAULT_INACTIVITY_HOURS = 24;
 
 // Categories shown in the dropdown when someone opens a ticket. Edit this
 // list to add/remove/rename categories.
@@ -29,32 +39,50 @@ const TICKET_CATEGORIES = [
   { label: "Other", value: "other", emoji: "❓", description: "Anything else" },
 ];
 
-// --- Per-guild config (panel/category/log channel, support role) ---
+// --- Per-guild config (panel/category/log channel, support role, timers) ---
 // Stored as simple JSON on disk, set via the /ticket-setup command.
 
-async function loadConfig() {
-  if (!existsSync(CONFIG_PATH)) return {};
+async function loadJSON(path) {
+  if (!existsSync(path)) return {};
   try {
-    return JSON.parse(await readFile(CONFIG_PATH, "utf-8"));
+    return JSON.parse(await readFile(path, "utf-8"));
   } catch {
     return {};
   }
 }
 
-async function saveConfig(config) {
-  await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
+async function saveJSON(path, data) {
+  await writeFile(path, JSON.stringify(data, null, 2), "utf-8");
 }
 
 async function getGuildConfig(guildId) {
-  const config = await loadConfig();
+  const config = await loadJSON(CONFIG_PATH);
   return config[guildId] ?? null;
 }
 
 async function setGuildConfig(guildId, partial) {
-  const config = await loadConfig();
+  const config = await loadJSON(CONFIG_PATH);
   config[guildId] = { ...(config[guildId] ?? {}), ...partial };
-  await saveConfig(config);
+  await saveJSON(CONFIG_PATH, config);
   return config[guildId];
+}
+
+// --- Per-ticket state (open tickets being tracked for alerts/auto-close) ---
+
+async function getState() {
+  return loadJSON(STATE_PATH);
+}
+
+async function setTicketState(channelId, partial) {
+  const state = await getState();
+  state[channelId] = { ...(state[channelId] ?? {}), ...partial };
+  await saveJSON(STATE_PATH, state);
+}
+
+async function removeTicketState(channelId) {
+  const state = await getState();
+  delete state[channelId];
+  await saveJSON(STATE_PATH, state);
 }
 
 // --- UI builders ---
@@ -146,7 +174,104 @@ async function buildTranscript(channel) {
   return lines.join("\n") || "(no messages)";
 }
 
+// Shared close logic used by both the "Close Ticket" button and the
+// auto-close-on-inactivity background check.
+async function closeTicketChannel(channel, closedByText) {
+  try {
+    const guildConfig = await getGuildConfig(channel.guild.id);
+    const transcriptText = await buildTranscript(channel);
+    const tempDir = await mkdtemp(join(tmpdir(), "ticket-"));
+    const transcriptPath = join(tempDir, `${channel.name}.txt`);
+    await writeFile(transcriptPath, transcriptText, "utf-8");
+
+    if (guildConfig?.logChannelId) {
+      const logChannel = await channel.guild.channels.fetch(guildConfig.logChannelId).catch(() => null);
+      if (logChannel) {
+        const logEmbed = new EmbedBuilder()
+          .setColor(0xed4245)
+          .setTitle("🔒 Ticket closed")
+          .addFields(
+            { name: "Channel", value: `#${channel.name}`, inline: true },
+            { name: "Closed by", value: closedByText, inline: true }
+          )
+          .setTimestamp();
+        await logChannel.send({
+          embeds: [logEmbed],
+          files: [{ attachment: transcriptPath, name: `${channel.name}.txt` }],
+        });
+      }
+    }
+
+    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  } catch (error) {
+    console.error("Error generating transcript:", error);
+  }
+
+  await removeTicketState(channel.id);
+
+  setTimeout(() => {
+    channel.delete().catch((error) => console.error("Error deleting ticket channel:", error));
+  }, 5000);
+}
+
+// Background job: checks every ticket being tracked and sends the inactivity
+// alert or auto-closes it once the configured thresholds are reached.
+function startBackgroundChecker(client) {
+  setInterval(async () => {
+    const state = await getState();
+    const now = Date.now();
+
+    for (const [channelId, ticket] of Object.entries(state)) {
+      try {
+        const channel = await client.channels.fetch(channelId).catch(() => null);
+        if (!channel) {
+          // Channel no longer exists (deleted manually) — stop tracking it.
+          await removeTicketState(channelId);
+          continue;
+        }
+
+        const guildConfig = await getGuildConfig(ticket.guildId);
+        const alertHours = guildConfig?.alertHours ?? DEFAULT_ALERT_HOURS;
+        const inactivityHours = guildConfig?.inactivityHours ?? DEFAULT_INACTIVITY_HOURS;
+
+        const hoursSinceOpen = (now - ticket.openedAt) / 3600000;
+        const hoursSinceActivity = (now - ticket.lastActivityAt) / 3600000;
+
+        // Auto-close first: if it's been inactive long enough, no need to
+        // also send the alert.
+        if (hoursSinceActivity >= inactivityHours) {
+          await channel.send(
+            `⏰ This ticket has had no activity for over ${inactivityHours} hour(s) and will be closed automatically.`
+          );
+          await closeTicketChannel(channel, "Auto-closed (inactivity)");
+          continue;
+        }
+
+        if (!ticket.alertSent && hoursSinceOpen >= alertHours) {
+          await channel.send(
+            `<@${ticket.openerId}> ⏰ This ticket has been open for over ${alertHours} hour(s) without being closed. Please follow up if you still need help.`
+          );
+          await setTicketState(channelId, { alertSent: true });
+        }
+      } catch (error) {
+        console.error(`Error checking ticket ${channelId}:`, error);
+      }
+    }
+  }, CHECK_INTERVAL_MS);
+}
+
 export function registerTicketHandlers(client) {
+  client.once("ready", () => startBackgroundChecker(client));
+
+  // Tracks activity (any message) in open ticket channels so the
+  // inactivity timer resets.
+  client.on("messageCreate", async (message) => {
+    if (!message.guild) return;
+    const state = await getState();
+    if (!state[message.channel.id]) return;
+    await setTicketState(message.channel.id, { lastActivityAt: Date.now() });
+  });
+
   client.on("interactionCreate", async (interaction) => {
     // --- Admin command: set up (or update) the ticket panel ---
     if (interaction.isChatInputCommand() && interaction.commandName === "ticket-setup") {
@@ -154,6 +279,8 @@ export function registerTicketHandlers(client) {
       const category = interaction.options.getChannel("category");
       const logChannel = interaction.options.getChannel("log_channel");
       const supportRole = interaction.options.getRole("support_role");
+      const alertHours = interaction.options.getInteger("alert_hours");
+      const inactivityHours = interaction.options.getInteger("inactivity_hours");
 
       await interaction.deferReply({ ephemeral: true });
 
@@ -167,6 +294,8 @@ export function registerTicketHandlers(client) {
           categoryId: category?.id ?? null,
           logChannelId: logChannel?.id ?? null,
           supportRoleId: supportRole?.id ?? null,
+          alertHours: alertHours ?? DEFAULT_ALERT_HOURS,
+          inactivityHours: inactivityHours ?? DEFAULT_INACTIVITY_HOURS,
         });
 
         await interaction.editReply(
@@ -175,7 +304,10 @@ export function registerTicketHandlers(client) {
             (logChannel ? ` Logs will go to <#${logChannel.id}>.` : " No log channel set.") +
             (supportRole
               ? ` Staff role: <@&${supportRole.id}>.`
-              : " No staff role set (only Admins/Manage Channels can manage tickets).")
+              : " No staff role set (only Admins/Manage Channels can manage tickets).") +
+            ` Inactivity alert after **${alertHours ?? DEFAULT_ALERT_HOURS}h**, auto-close after **${
+              inactivityHours ?? DEFAULT_INACTIVITY_HOURS
+            }h** of no activity.`
         );
       } catch (error) {
         console.error("Error setting up ticket panel:", error);
@@ -264,6 +396,15 @@ export function registerTicketHandlers(client) {
           components: [buildCloseButton()],
         });
 
+        const now = Date.now();
+        await setTicketState(ticketChannel.id, {
+          guildId: interaction.guild.id,
+          openerId: interaction.user.id,
+          openedAt: now,
+          lastActivityAt: now,
+          alertSent: false,
+        });
+
         await interaction.followUp({
           content: `✅ Your ticket was created: <#${ticketChannel.id}>`,
           ephemeral: true,
@@ -319,41 +460,7 @@ export function registerTicketHandlers(client) {
       }
 
       await interaction.reply("🔒 Closing this ticket in 5 seconds, generating transcript...");
-
-      try {
-        const transcriptText = await buildTranscript(channel);
-        const tempDir = await mkdtemp(join(tmpdir(), "ticket-"));
-        const transcriptPath = join(tempDir, `${channel.name}.txt`);
-        await writeFile(transcriptPath, transcriptText, "utf-8");
-
-        if (guildConfig?.logChannelId) {
-          const logChannel = await interaction.guild.channels
-            .fetch(guildConfig.logChannelId)
-            .catch(() => null);
-          if (logChannel) {
-            const logEmbed = new EmbedBuilder()
-              .setColor(0xed4245)
-              .setTitle("🔒 Ticket closed")
-              .addFields(
-                { name: "Channel", value: `#${channel.name}`, inline: true },
-                { name: "Closed by", value: `<@${interaction.user.id}>`, inline: true }
-              )
-              .setTimestamp();
-            await logChannel.send({
-              embeds: [logEmbed],
-              files: [{ attachment: transcriptPath, name: `${channel.name}.txt` }],
-            });
-          }
-        }
-
-        await rm(tempDir, { recursive: true, force: true }).catch(() => {});
-      } catch (error) {
-        console.error("Error generating transcript:", error);
-      }
-
-      setTimeout(() => {
-        channel.delete().catch((error) => console.error("Error deleting ticket channel:", error));
-      }, 5000);
+      await closeTicketChannel(channel, `<@${interaction.user.id}>`);
       return;
     }
   });
