@@ -1,5 +1,5 @@
 node_modules/
 .env
 codigos/
-   tickets-config.json
-   tickets-state.json
+tickets-config.json
+tickets-state.json
