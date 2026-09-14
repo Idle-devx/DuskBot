@@ -85,17 +85,23 @@ async function removeTicketState(channelId) {
   await saveJSON(STATE_PATH, state);
 }
 
-// Finds an already-open ticket channel for this user in this guild, using
-// the persisted state instead of the channel cache/topic (the cache can be
-// incomplete right after a bot restart, causing missed duplicates).
-async function findOpenTicketChannelId(guildId, userId) {
-  const state = await getState();
-  for (const [channelId, ticket] of Object.entries(state)) {
-    if (ticket.guildId === guildId && ticket.openerId === userId) {
-      return channelId;
-    }
-  }
-  return null;
+// Extracts every role ID mentioned in a string like "@Staff @Helper" (as
+// Discord sends it: "<@&123> <@&456>"). Returns an array, possibly empty.
+function parseRoleMentions(text) {
+  if (!text) return [];
+  const matches = [...text.matchAll(/<@&(\d+)>/g)];
+  return [...new Set(matches.map((m) => m[1]))];
+}
+
+// Shared permission check for closing a ticket, used by both the button
+// and the /close command.
+function canCloseTicket(member, openerId, guildConfig) {
+  return (
+    member.id === openerId ||
+    member.permissions.has(PermissionFlagsBits.Administrator) ||
+    member.permissions.has(PermissionFlagsBits.ManageChannels) ||
+    (guildConfig?.supportRoleIds ?? []).some((id) => member.roles.cache.has(id))
+  );
 }
 
 // --- UI builders ---
@@ -260,18 +266,11 @@ function startBackgroundChecker(client) {
           continue;
         }
 
-        // Recurring nudge to the ticket opener (not staff): fires once when
-        // the ticket has been inactive for `alertHours`, then again every
-        // `alertHours` of continued inactivity until someone replies or it
-        // auto-closes.
-        const lastAlertAt = ticket.lastAlertAt ?? ticket.openedAt;
-        const hoursSinceLastAlert = (now - lastAlertAt) / 3600000;
-
-        if (hoursSinceActivity >= alertHours && hoursSinceLastAlert >= alertHours) {
+        if (!ticket.alertSent && hoursSinceOpen >= alertHours) {
           await channel.send(
-            `<@${ticket.openerId}> ⏰ This ticket has had no activity for over ${alertHours} hour(s). Please follow up if you still need help, otherwise it may be auto-closed after ${inactivityHours} hour(s) of inactivity.`
+            `<@${ticket.openerId}> ⏰ This ticket has been open for over ${alertHours} hour(s) without being closed. Please follow up if you still need help.`
           );
-          await setTicketState(channelId, { lastAlertAt: now });
+          await setTicketState(channelId, { alertSent: true });
         }
       } catch (error) {
         console.error(`Error checking ticket ${channelId}:`, error);
@@ -298,7 +297,7 @@ export function registerTicketHandlers(client) {
       const panelChannel = interaction.options.getChannel("panel_channel", true);
       const category = interaction.options.getChannel("category");
       const logChannel = interaction.options.getChannel("log_channel");
-      const supportRole = interaction.options.getRole("support_role");
+      const supportRoleIds = parseRoleMentions(interaction.options.getString("support_roles"));
       const alertHours = interaction.options.getInteger("alert_hours");
       const inactivityHours = interaction.options.getInteger("inactivity_hours");
 
@@ -313,7 +312,7 @@ export function registerTicketHandlers(client) {
         await setGuildConfig(interaction.guild.id, {
           categoryId: category?.id ?? null,
           logChannelId: logChannel?.id ?? null,
-          supportRoleId: supportRole?.id ?? null,
+          supportRoleIds,
           alertHours: alertHours ?? DEFAULT_ALERT_HOURS,
           inactivityHours: inactivityHours ?? DEFAULT_INACTIVITY_HOURS,
         });
@@ -322,9 +321,9 @@ export function registerTicketHandlers(client) {
           `✅ Ticket panel posted in <#${panelChannel.id}>.` +
             (category ? ` New tickets will be created under **${category.name}**.` : "") +
             (logChannel ? ` Logs will go to <#${logChannel.id}>.` : " No log channel set.") +
-            (supportRole
-              ? ` Staff role: <@&${supportRole.id}>.`
-              : " No staff role set (only Admins/Manage Channels can manage tickets).") +
+            (supportRoleIds.length
+              ? ` Staff roles: ${supportRoleIds.map((id) => `<@&${id}>`).join(", ")}.`
+              : " No staff roles set (only Admins/Manage Channels can manage tickets).") +
             ` Inactivity alert after **${alertHours ?? DEFAULT_ALERT_HOURS}h**, auto-close after **${
               inactivityHours ?? DEFAULT_INACTIVITY_HOURS
             }h** of no activity.`
@@ -356,22 +355,19 @@ export function registerTicketHandlers(client) {
 
       await interaction.deferUpdate();
 
-      // Prevent duplicate open tickets from the same user. Uses the
-      // persisted ticket state (not the channel cache) so it's reliable
-      // even right after a bot restart.
-      const existingChannelId = await findOpenTicketChannelId(interaction.guild.id, interaction.user.id);
-      if (existingChannelId) {
-        const existingChannel = await interaction.guild.channels.fetch(existingChannelId).catch(() => null);
-        if (existingChannel) {
-          await interaction.followUp({
-            content: `You already have an open ticket: <#${existingChannelId}>`,
-            ephemeral: true,
-          });
-          return;
-        }
-        // Stale state pointing at a channel that no longer exists — clean
-        // it up and let the user open a fresh ticket.
-        await removeTicketState(existingChannelId);
+      // Prevent duplicate open tickets from the same user.
+      const existing = interaction.guild.channels.cache.find(
+        (ch) =>
+          ch.type === ChannelType.GuildText &&
+          ch.topic &&
+          ch.topic.includes(`opener:${interaction.user.id}`)
+      );
+      if (existing) {
+        await interaction.followUp({
+          content: `You already have an open ticket: <#${existing.id}>`,
+          ephemeral: true,
+        });
+        return;
       }
 
       try {
@@ -388,17 +384,19 @@ export function registerTicketHandlers(client) {
           },
         ];
 
-        if (guildConfig?.supportRoleId) {
-          overwrites.push({
-            id: guildConfig.supportRoleId,
-            allow: [
-              PermissionFlagsBits.ViewChannel,
-              PermissionFlagsBits.SendMessages,
-              PermissionFlagsBits.ReadMessageHistory,
-              PermissionFlagsBits.AttachFiles,
-              PermissionFlagsBits.ManageMessages,
-            ],
-          });
+        if (guildConfig?.supportRoleIds?.length) {
+          for (const roleId of guildConfig.supportRoleIds) {
+            overwrites.push({
+              id: roleId,
+              allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ReadMessageHistory,
+                PermissionFlagsBits.AttachFiles,
+                PermissionFlagsBits.ManageMessages,
+              ],
+            });
+          }
         }
 
         const channelName = `ticket-${sanitizeChannelName(interaction.user.username)}`;
@@ -411,9 +409,10 @@ export function registerTicketHandlers(client) {
           permissionOverwrites: overwrites,
         });
 
+        const supportMentions = (guildConfig?.supportRoleIds ?? []).map((id) => `<@&${id}>`).join(" ");
         await ticketChannel.send({
-          content: guildConfig?.supportRoleId
-            ? `<@${interaction.user.id}> <@&${guildConfig.supportRoleId}>`
+          content: supportMentions
+            ? `<@${interaction.user.id}> ${supportMentions}`
             : `<@${interaction.user.id}>`,
           embeds: [buildTicketWelcomeEmbed(interaction.user, categoryInfo?.label ?? categoryValue)],
           components: [buildCloseButton()],
@@ -425,7 +424,7 @@ export function registerTicketHandlers(client) {
           openerId: interaction.user.id,
           openedAt: now,
           lastActivityAt: now,
-          lastAlertAt: now,
+          alertSent: false,
         });
 
         await interaction.followUp({
@@ -468,13 +467,38 @@ export function registerTicketHandlers(client) {
       const openerId = openerMatch?.[1];
       const guildConfig = await getGuildConfig(interaction.guild.id);
 
-      const isOpener = interaction.user.id === openerId;
-      const isStaff =
-        interaction.member.permissions.has(PermissionFlagsBits.Administrator) ||
-        interaction.member.permissions.has(PermissionFlagsBits.ManageChannels) ||
-        (guildConfig?.supportRoleId && interaction.member.roles.cache.has(guildConfig.supportRoleId));
+      if (!canCloseTicket(interaction.member, openerId, guildConfig)) {
+        await interaction.reply({
+          content: "You don't have permission to close this ticket.",
+          ephemeral: true,
+        });
+        return;
+      }
 
-      if (!isOpener && !isStaff) {
+      await interaction.reply("🔒 Closing this ticket in 5 seconds, generating transcript...");
+      await closeTicketChannel(channel, `<@${interaction.user.id}>`);
+      return;
+    }
+
+    // --- Command: /close (same effect as the button, usable from anywhere
+    // in the ticket channel without scrolling to find the button) ---
+    if (interaction.isChatInputCommand() && interaction.commandName === "close") {
+      const channel = interaction.channel;
+      const topic = channel.topic ?? "";
+      const openerMatch = topic.match(/opener:(\d+)/);
+
+      if (!openerMatch) {
+        await interaction.reply({
+          content: "This command can only be used inside a ticket channel.",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const openerId = openerMatch[1];
+      const guildConfig = await getGuildConfig(interaction.guild.id);
+
+      if (!canCloseTicket(interaction.member, openerId, guildConfig)) {
         await interaction.reply({
           content: "You don't have permission to close this ticket.",
           ephemeral: true,
