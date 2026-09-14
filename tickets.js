@@ -1,0 +1,360 @@
+// Ticket system: a persistent panel with a button lets users open a ticket
+// through a category dropdown; each ticket becomes a private channel with a
+// "Close Ticket" button that saves a transcript to a log channel and then
+// deletes the channel.
+import {
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder,
+  ChannelType,
+  PermissionFlagsBits,
+} from "discord.js";
+import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const CONFIG_PATH = join(__dirname, "tickets-config.json");
+
+// Categories shown in the dropdown when someone opens a ticket. Edit this
+// list to add/remove/rename categories.
+const TICKET_CATEGORIES = [
+  { label: "General Support", value: "support", emoji: "🛠️", description: "Questions or help with something" },
+  { label: "Report a User", value: "report", emoji: "🚨", description: "Report rule-breaking or abuse" },
+  { label: "Purchase / Billing", value: "purchase", emoji: "💳", description: "Payment or order issues" },
+  { label: "Other", value: "other", emoji: "❓", description: "Anything else" },
+];
+
+// --- Per-guild config (panel/category/log channel, support role) ---
+// Stored as simple JSON on disk, set via the /ticket-setup command.
+
+async function loadConfig() {
+  if (!existsSync(CONFIG_PATH)) return {};
+  try {
+    return JSON.parse(await readFile(CONFIG_PATH, "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+async function saveConfig(config) {
+  await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
+}
+
+async function getGuildConfig(guildId) {
+  const config = await loadConfig();
+  return config[guildId] ?? null;
+}
+
+async function setGuildConfig(guildId, partial) {
+  const config = await loadConfig();
+  config[guildId] = { ...(config[guildId] ?? {}), ...partial };
+  await saveConfig(config);
+  return config[guildId];
+}
+
+// --- UI builders ---
+
+function buildPanelEmbed() {
+  return new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle("🎫 Need help?")
+    .setDescription("Click the button below and choose a category to open a private ticket with the staff team.");
+}
+
+function buildPanelButton() {
+  const button = new ButtonBuilder()
+    .setCustomId("ticket_open_panel")
+    .setLabel("Open Ticket")
+    .setEmoji("🎫")
+    .setStyle(ButtonStyle.Primary);
+  return new ActionRowBuilder().addComponents(button);
+}
+
+function buildCategorySelect() {
+  const select = new StringSelectMenuBuilder()
+    .setCustomId("ticket_category_select")
+    .setPlaceholder("Choose a category...")
+    .addOptions(
+      TICKET_CATEGORIES.map((c) => ({
+        label: c.label,
+        value: c.value,
+        emoji: c.emoji,
+        description: c.description,
+      }))
+    );
+  return new ActionRowBuilder().addComponents(select);
+}
+
+function buildTicketWelcomeEmbed(opener, categoryLabel) {
+  return new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle("🎫 Ticket opened")
+    .setDescription(`Hi <@${opener.id}>! A member of the staff team will be with you shortly.`)
+    .addFields({ name: "Category", value: categoryLabel })
+    .setTimestamp();
+}
+
+function buildCloseButton() {
+  const button = new ButtonBuilder()
+    .setCustomId("ticket_close")
+    .setLabel("Close Ticket")
+    .setEmoji("🔒")
+    .setStyle(ButtonStyle.Danger);
+  return new ActionRowBuilder().addComponents(button);
+}
+
+function sanitizeChannelName(name) {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 90);
+}
+
+// Builds a plain-text transcript from a channel's message history.
+async function buildTranscript(channel) {
+  let allMessages = [];
+  let lastId;
+
+  // Discord only returns up to 100 messages per request; page backwards
+  // until there are no more, capped at 1000 so this can't run forever.
+  while (allMessages.length < 1000) {
+    const options = { limit: 100 };
+    if (lastId) options.before = lastId;
+    const batch = await channel.messages.fetch(options);
+    if (batch.size === 0) break;
+    allMessages = allMessages.concat([...batch.values()]);
+    lastId = batch.last().id;
+    if (batch.size < 100) break;
+  }
+
+  allMessages.reverse();
+
+  const lines = allMessages.map((msg) => {
+    const timestamp = msg.createdAt.toISOString();
+    const author = msg.author.tag;
+    const content = msg.content || "(no text content)";
+    const attachments = msg.attachments.map((a) => a.url).join(" ");
+    return `[${timestamp}] ${author}: ${content}${attachments ? " " + attachments : ""}`;
+  });
+
+  return lines.join("\n") || "(no messages)";
+}
+
+export function registerTicketHandlers(client) {
+  client.on("interactionCreate", async (interaction) => {
+    // --- Admin command: set up (or update) the ticket panel ---
+    if (interaction.isChatInputCommand() && interaction.commandName === "ticket-setup") {
+      const panelChannel = interaction.options.getChannel("panel_channel", true);
+      const category = interaction.options.getChannel("category");
+      const logChannel = interaction.options.getChannel("log_channel");
+      const supportRole = interaction.options.getRole("support_role");
+
+      await interaction.deferReply({ ephemeral: true });
+
+      try {
+        await panelChannel.send({
+          embeds: [buildPanelEmbed()],
+          components: [buildPanelButton()],
+        });
+
+        await setGuildConfig(interaction.guild.id, {
+          categoryId: category?.id ?? null,
+          logChannelId: logChannel?.id ?? null,
+          supportRoleId: supportRole?.id ?? null,
+        });
+
+        await interaction.editReply(
+          `✅ Ticket panel posted in <#${panelChannel.id}>.` +
+            (category ? ` New tickets will be created under **${category.name}**.` : "") +
+            (logChannel ? ` Logs will go to <#${logChannel.id}>.` : " No log channel set.") +
+            (supportRole
+              ? ` Staff role: <@&${supportRole.id}>.`
+              : " No staff role set (only Admins/Manage Channels can manage tickets).")
+        );
+      } catch (error) {
+        console.error("Error setting up ticket panel:", error);
+        await interaction.editReply(
+          "An error occurred setting up the ticket panel. Check my permissions in that channel."
+        );
+      }
+      return;
+    }
+
+    // --- Button: open panel clicked -> show category dropdown ---
+    if (interaction.isButton() && interaction.customId === "ticket_open_panel") {
+      await interaction.reply({
+        content: "Choose a category for your ticket:",
+        components: [buildCategorySelect()],
+        ephemeral: true,
+      });
+      return;
+    }
+
+    // --- Select menu: category chosen -> create the ticket channel ---
+    if (interaction.isStringSelectMenu() && interaction.customId === "ticket_category_select") {
+      const categoryValue = interaction.values[0];
+      const categoryInfo = TICKET_CATEGORIES.find((c) => c.value === categoryValue);
+      const guildConfig = await getGuildConfig(interaction.guild.id);
+
+      await interaction.deferUpdate();
+
+      // Prevent duplicate open tickets from the same user.
+      const existing = interaction.guild.channels.cache.find(
+        (ch) =>
+          ch.type === ChannelType.GuildText &&
+          ch.topic &&
+          ch.topic.includes(`opener:${interaction.user.id}`)
+      );
+      if (existing) {
+        await interaction.followUp({
+          content: `You already have an open ticket: <#${existing.id}>`,
+          ephemeral: true,
+        });
+        return;
+      }
+
+      try {
+        const overwrites = [
+          { id: interaction.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+          {
+            id: interaction.user.id,
+            allow: [
+              PermissionFlagsBits.ViewChannel,
+              PermissionFlagsBits.SendMessages,
+              PermissionFlagsBits.ReadMessageHistory,
+              PermissionFlagsBits.AttachFiles,
+            ],
+          },
+        ];
+
+        if (guildConfig?.supportRoleId) {
+          overwrites.push({
+            id: guildConfig.supportRoleId,
+            allow: [
+              PermissionFlagsBits.ViewChannel,
+              PermissionFlagsBits.SendMessages,
+              PermissionFlagsBits.ReadMessageHistory,
+              PermissionFlagsBits.AttachFiles,
+              PermissionFlagsBits.ManageMessages,
+            ],
+          });
+        }
+
+        const channelName = `ticket-${sanitizeChannelName(interaction.user.username)}`;
+
+        const ticketChannel = await interaction.guild.channels.create({
+          name: channelName,
+          type: ChannelType.GuildText,
+          parent: guildConfig?.categoryId ?? undefined,
+          topic: `opener:${interaction.user.id} | category:${categoryValue}`,
+          permissionOverwrites: overwrites,
+        });
+
+        await ticketChannel.send({
+          content: guildConfig?.supportRoleId
+            ? `<@${interaction.user.id}> <@&${guildConfig.supportRoleId}>`
+            : `<@${interaction.user.id}>`,
+          embeds: [buildTicketWelcomeEmbed(interaction.user, categoryInfo?.label ?? categoryValue)],
+          components: [buildCloseButton()],
+        });
+
+        await interaction.followUp({
+          content: `✅ Your ticket was created: <#${ticketChannel.id}>`,
+          ephemeral: true,
+        });
+
+        if (guildConfig?.logChannelId) {
+          const logChannel = await interaction.guild.channels
+            .fetch(guildConfig.logChannelId)
+            .catch(() => null);
+          if (logChannel) {
+            const logEmbed = new EmbedBuilder()
+              .setColor(0x57f287)
+              .setTitle("🎫 Ticket opened")
+              .addFields(
+                { name: "User", value: `<@${interaction.user.id}>`, inline: true },
+                { name: "Category", value: categoryInfo?.label ?? categoryValue, inline: true },
+                { name: "Channel", value: `<#${ticketChannel.id}>`, inline: true }
+              )
+              .setTimestamp();
+            await logChannel.send({ embeds: [logEmbed] });
+          }
+        }
+      } catch (error) {
+        console.error("Error creating ticket channel:", error);
+        await interaction.followUp({
+          content: "An error occurred creating your ticket. Check that I have permission to create channels here.",
+          ephemeral: true,
+        });
+      }
+      return;
+    }
+
+    // --- Button: close ticket ---
+    if (interaction.isButton() && interaction.customId === "ticket_close") {
+      const channel = interaction.channel;
+      const topic = channel.topic ?? "";
+      const openerMatch = topic.match(/opener:(\d+)/);
+      const openerId = openerMatch?.[1];
+      const guildConfig = await getGuildConfig(interaction.guild.id);
+
+      const isOpener = interaction.user.id === openerId;
+      const isStaff =
+        interaction.member.permissions.has(PermissionFlagsBits.Administrator) ||
+        interaction.member.permissions.has(PermissionFlagsBits.ManageChannels) ||
+        (guildConfig?.supportRoleId && interaction.member.roles.cache.has(guildConfig.supportRoleId));
+
+      if (!isOpener && !isStaff) {
+        await interaction.reply({
+          content: "You don't have permission to close this ticket.",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      await interaction.reply("🔒 Closing this ticket in 5 seconds, generating transcript...");
+
+      try {
+        const transcriptText = await buildTranscript(channel);
+        const tempDir = await mkdtemp(join(tmpdir(), "ticket-"));
+        const transcriptPath = join(tempDir, `${channel.name}.txt`);
+        await writeFile(transcriptPath, transcriptText, "utf-8");
+
+        if (guildConfig?.logChannelId) {
+          const logChannel = await interaction.guild.channels
+            .fetch(guildConfig.logChannelId)
+            .catch(() => null);
+          if (logChannel) {
+            const logEmbed = new EmbedBuilder()
+              .setColor(0xed4245)
+              .setTitle("🔒 Ticket closed")
+              .addFields(
+                { name: "Channel", value: `#${channel.name}`, inline: true },
+                { name: "Closed by", value: `<@${interaction.user.id}>`, inline: true }
+              )
+              .setTimestamp();
+            await logChannel.send({
+              embeds: [logEmbed],
+              files: [{ attachment: transcriptPath, name: `${channel.name}.txt` }],
+            });
+          }
+        }
+
+        await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      } catch (error) {
+        console.error("Error generating transcript:", error);
+      }
+
+      setTimeout(() => {
+        channel.delete().catch((error) => console.error("Error deleting ticket channel:", error));
+      }, 5000);
+      return;
+    }
+  });
+}
