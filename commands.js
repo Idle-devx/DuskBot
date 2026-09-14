@@ -218,5 +218,30 @@ export const commands = [
         .setName("support_role")
         .setDescription("Role that can see and manage all tickets (besides Admins)")
     )
+    .addIntegerOption((option) =>
+      option
+        .setName("alert_hours")
+        .setDescription("Hours a ticket can stay open before an inactivity alert is posted (default 3)")
+        .setMinValue(1)
+        .setMaxValue(720)
+    )
+    .addIntegerOption((option) =>
+      option
+        .setName("inactivity_hours")
+        .setDescription("Hours with zero activity before a ticket auto-closes (default 24)")
+        .setMinValue(1)
+        .setMaxValue(720)
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName("modlogs-setup")
+    .setDescription("Sets the channel where ban/kick/mute/unban logs are sent")
+    .addChannelOption((option) =>
+      option
+        .setName("log_channel")
+        .setDescription("Channel where moderation logs will be posted")
+        .addChannelTypes(ChannelType.GuildText)
+        .setRequired(true)
+    )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 ].map((command) => command.toJSON());
