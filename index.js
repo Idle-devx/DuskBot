@@ -2,13 +2,14 @@ import { Client, GatewayIntentBits, AttachmentBuilder, PermissionFlagsBits, Embe
 import Groq from "groq-sdk";
 import ffmpegPath from "ffmpeg-static";
 import ffmpeg from "fluent-ffmpeg";
-import { writeFile, mkdtemp, rm, mkdir, readdir } from "node:fs/promises";
+import { readFile, writeFile, mkdtemp, rm, mkdir, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import "dotenv/config";
 import { registerTicketHandlers } from "./tickets.js";
+import { registerVerifyHandlers } from "./verify.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -17,10 +18,19 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+  // GuildMembers is required for the verification system (verify.js) to see
+  // guildMemberAdd/guildMemberRemove events. It's a "privileged" intent: you
+  // must also turn it on for the app in the Discord Developer Portal
+  // (Bot > Privileged Gateway Intents > Server Members Intent).
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
+  ],
 });
 
 registerTicketHandlers(client);
+registerVerifyHandlers(client);
 
 // Direct message (DM) notices to the affected user, styled as an embed
 // (card with color, title, and fields). Change the title, color, or emoji
@@ -71,6 +81,26 @@ async function setModLogConfig(guildId, partial) {
   const config = await loadJSON(MODLOG_CONFIG_PATH);
   config[guildId] = { ...(config[guildId] ?? {}), ...partial };
   await saveJSON(MODLOG_CONFIG_PATH, config);
+  return config[guildId];
+}
+
+// --- Per-server access configuration (set via /access-setup) ---
+//
+// Lets each server layer an extra allowed role on top of the usual Discord
+// permissions for moderation, save-code/delete-code, and code, instead of
+// being stuck with a fixed permission or the hardcoded "Scripter" name.
+
+const ACCESS_CONFIG_PATH = join(__dirname, "access-config.json");
+
+async function getAccessConfig(guildId) {
+  const config = await loadJSON(ACCESS_CONFIG_PATH);
+  return config[guildId] ?? {};
+}
+
+async function setAccessConfig(guildId, partial) {
+  const config = await loadJSON(ACCESS_CONFIG_PATH);
+  config[guildId] = { ...(config[guildId] ?? {}), ...partial };
+  await saveJSON(ACCESS_CONFIG_PATH, config);
   return config[guildId];
 }
 
@@ -206,43 +236,70 @@ async function notifyUserByDM(command, targetUser, guild, reason, executor, extr
   }
 }
 
-// --- Per-project code storage ---
+// --- Per-project code storage (isolated per guild) ---
 
-// Name of the role allowed to use /code. Adjust it if it's named differently on your server.
+// Default role name used for /code when a server hasn't set a custom
+// code_role via /access-setup. Adjust it if you want a different default.
 const SCRIPTER_ROLE_NAME = "Scripter";
 
+// Base folder. Each guild gets its own subfolder (codigos/<guildId>/...) so
+// files, projects, and autocomplete suggestions never cross between servers.
 const CODE_DIR = join(__dirname, "codigos");
 if (!existsSync(CODE_DIR)) {
   await mkdir(CODE_DIR, { recursive: true });
 }
 
-// Only Admins/Mods can save (already enforced by Discord via
-// setDefaultMemberPermissions in deploy-commands.js, but re-validated here
-// in case a server admin grants the permission to someone else later).
-function canSaveCode(member) {
-  return (
+function guildCodeDir(guildId) {
+  return join(CODE_DIR, guildId);
+}
+
+async function ensureGuildCodeDir(guildId) {
+  const dir = guildCodeDir(guildId);
+  if (!existsSync(dir)) {
+    await mkdir(dir, { recursive: true });
+  }
+  return dir;
+}
+
+// Admins/Mods can always save, plus whatever extra role a server configured
+// via /access-setup (save_code_role). Also gates /delete-code.
+function canSaveCode(member, accessConfig = {}) {
+  if (
     member.permissions.has(PermissionFlagsBits.ModerateMembers) ||
     member.permissions.has(PermissionFlagsBits.Administrator)
-  );
+  ) {
+    return true;
+  }
+  if (accessConfig.saveCodeRoleId && member.roles.cache.has(accessConfig.saveCodeRoleId)) {
+    return true;
+  }
+  return false;
 }
 
-// Anyone with the Scripter role, or who can already save (Admins/Mods), can retrieve code.
-function canRetrieveCode(member) {
-  return (
-    member.roles.cache.some((role) => role.name === SCRIPTER_ROLE_NAME) ||
-    canSaveCode(member)
-  );
+// Anyone who can save (Admins/Mods/configured save_code_role) can also
+// retrieve. Otherwise: the server's configured code_role, or the default
+// "Scripter" role name if no code_role has been set.
+function canRetrieveCode(member, accessConfig = {}) {
+  if (canSaveCode(member, accessConfig)) return true;
+
+  if (accessConfig.codeRoleId) {
+    return member.roles.cache.has(accessConfig.codeRoleId);
+  }
+
+  return member.roles.cache.some((role) => role.name === SCRIPTER_ROLE_NAME);
 }
 
-// Returns the list of subfolders (projects) that exist in CODE_DIR.
-async function listProjects() {
-  const entries = await readdir(CODE_DIR, { withFileTypes: true });
+// Returns the list of subfolders (projects) that exist for this guild.
+async function listProjects(guildId) {
+  const dir = guildCodeDir(guildId);
+  if (!existsSync(dir)) return [];
+  const entries = await readdir(dir, { withFileTypes: true });
   return entries.filter((e) => e.isDirectory()).map((e) => e.name);
 }
 
-// Returns the list of files (without extension) inside a project.
-async function listFiles(project) {
-  const projectDir = join(CODE_DIR, project);
+// Returns the list of files (without extension) inside a project for this guild.
+async function listFiles(guildId, project) {
+  const projectDir = join(guildCodeDir(guildId), project);
   if (!existsSync(projectDir)) return [];
   const entries = await readdir(projectDir, { withFileTypes: true });
   return entries.filter((e) => e.isFile()).map((e) => e.name.replace(/\.txt$/, ""));
@@ -415,6 +472,34 @@ client.on("interactionCreate", async (interaction) => {
   const moderationCommands = ["ban", "kick", "softban", "mute", "unmute", "unban"];
   if (!moderationCommands.includes(interaction.commandName)) return;
 
+  // These commands are registered without setDefaultMemberPermissions (see
+  // commands.js), so Discord shows them to everyone — access is fully
+  // enforced here instead, using each server's Discord permissions plus
+  // whatever extra moderation_role was set via /access-setup.
+  const REQUIRED_NATIVE_PERMISSION = {
+    ban: PermissionFlagsBits.BanMembers,
+    softban: PermissionFlagsBits.BanMembers,
+    unban: PermissionFlagsBits.BanMembers,
+    kick: PermissionFlagsBits.KickMembers,
+    mute: PermissionFlagsBits.ModerateMembers,
+    unmute: PermissionFlagsBits.ModerateMembers,
+  };
+
+  const accessConfig = await getAccessConfig(interaction.guild.id);
+  const hasAccess =
+    interaction.member.permissions.has(PermissionFlagsBits.Administrator) ||
+    interaction.member.permissions.has(REQUIRED_NATIVE_PERMISSION[interaction.commandName]) ||
+    (accessConfig.moderationRoleId &&
+      interaction.member.roles.cache.has(accessConfig.moderationRoleId));
+
+  if (!hasAccess) {
+    await interaction.reply({
+      content: "You don't have permission to use this command.",
+      ephemeral: true,
+    });
+    return;
+  }
+
   const reason = interaction.options.getString("reason") ?? "No reason specified";
 
   // /unban is different: there's no "in-server" user to select, so it's
@@ -571,6 +656,48 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
+// --- Per-server access configuration ---
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== "access-setup") return;
+
+  const moderationRole = interaction.options.getRole("moderation_role");
+  const saveCodeRole = interaction.options.getRole("save_code_role");
+  const codeRole = interaction.options.getRole("code_role");
+  const clearModerationRole = interaction.options.getBoolean("clear_moderation_role");
+  const clearSaveCodeRole = interaction.options.getBoolean("clear_save_code_role");
+  const clearCodeRole = interaction.options.getBoolean("clear_code_role");
+
+  await interaction.deferReply({ ephemeral: true });
+
+  try {
+    const update = {};
+
+    if (clearModerationRole) update.moderationRoleId = null;
+    else if (moderationRole) update.moderationRoleId = moderationRole.id;
+
+    if (clearSaveCodeRole) update.saveCodeRoleId = null;
+    else if (saveCodeRole) update.saveCodeRoleId = saveCodeRole.id;
+
+    if (clearCodeRole) update.codeRoleId = null;
+    else if (codeRole) update.codeRoleId = codeRole.id;
+
+    const config = await setAccessConfig(interaction.guild.id, update);
+
+    const summary = [
+      `**Moderation role:** ${config.moderationRoleId ? `<@&${config.moderationRoleId}>` : "none (Discord permissions only)"}`,
+      `**save-code/delete-code role:** ${config.saveCodeRoleId ? `<@&${config.saveCodeRoleId}>` : "none (Mods/Admins only)"}`,
+      `**code role:** ${config.codeRoleId ? `<@&${config.codeRoleId}>` : `none configured (defaults to the "${SCRIPTER_ROLE_NAME}" role name)`}`,
+    ].join("\n");
+
+    await interaction.editReply(`✅ Access configuration updated.\n${summary}`);
+  } catch (error) {
+    console.error("Error in /access-setup:", error);
+    await interaction.editReply("An error occurred saving the access configuration.");
+  }
+});
+
 // --- Forum posts ---
 
 client.on("interactionCreate", async (interaction) => {
@@ -617,21 +744,22 @@ client.on("interactionCreate", async (interaction) => {
 
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isAutocomplete()) return;
-  if (!["save-code", "code"].includes(interaction.commandName)) return;
+  if (!["save-code", "delete-code", "code"].includes(interaction.commandName)) return;
 
   const focused = interaction.options.getFocused(true);
+  const guildId = interaction.guild.id;
 
   try {
     let options = [];
 
     if (focused.name === "project") {
-      const projects = await listProjects();
+      const projects = await listProjects(guildId);
       options = projects.filter((p) => p.startsWith(focused.value)).slice(0, 25);
     }
 
-    if (focused.name === "name" && interaction.commandName === "code") {
+    if (focused.name === "name" && ["code", "delete-code"].includes(interaction.commandName)) {
       const project = interaction.options.getString("project") ?? "";
-      const files = await listFiles(project);
+      const files = await listFiles(guildId, project);
       options = files.filter((a) => a.startsWith(focused.value)).slice(0, 25);
     }
 
@@ -648,7 +776,8 @@ client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName !== "save-code") return;
 
-  if (!canSaveCode(interaction.member)) {
+  const accessConfig = await getAccessConfig(interaction.guild.id);
+  if (!canSaveCode(interaction.member, accessConfig)) {
     await interaction.reply({ content: "You don't have permission to save code.", ephemeral: true });
     return;
   }
@@ -669,7 +798,8 @@ client.on("interactionCreate", async (interaction) => {
   await interaction.deferReply({ ephemeral: true });
 
   try {
-    const projectDir = join(CODE_DIR, project);
+    const guildDir = await ensureGuildCodeDir(interaction.guild.id);
+    const projectDir = join(guildDir, project);
     await mkdir(projectDir, { recursive: true });
 
     const filePath = join(projectDir, `${name}.txt`);
@@ -691,11 +821,58 @@ client.on("interactionCreate", async (interaction) => {
 
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== "delete-code") return;
+
+  const accessConfig = await getAccessConfig(interaction.guild.id);
+  if (!canSaveCode(interaction.member, accessConfig)) {
+    await interaction.reply({ content: "You don't have permission to delete code.", ephemeral: true });
+    return;
+  }
+
+  const project = sanitizeName(interaction.options.getString("project", true));
+  const name = interaction.options.getString("name");
+  const guildDir = guildCodeDir(interaction.guild.id);
+  const projectDir = join(guildDir, project);
+
+  await interaction.deferReply({ ephemeral: true });
+
+  try {
+    if (!name) {
+      // No file name given: delete the whole project folder.
+      if (!existsSync(projectDir)) {
+        await interaction.editReply(`There's no project called \`${project}\`.`);
+        return;
+      }
+      await rm(projectDir, { recursive: true, force: true });
+      await interaction.editReply(`✅ Deleted the whole project \`${project}\`.`);
+      return;
+    }
+
+    const safeName = sanitizeName(name);
+    const filePath = join(projectDir, `${safeName}.txt`);
+    if (!existsSync(filePath)) {
+      await interaction.editReply(`Couldn't find anything saved as \`${project}/${safeName}\`.`);
+      return;
+    }
+    await rm(filePath, { force: true });
+    await interaction.editReply(`✅ Deleted \`${project}/${safeName}\`.`);
+  } catch (error) {
+    console.error("Error deleting code:", error);
+    await interaction.editReply("An error occurred deleting that.");
+  }
+});
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName !== "code") return;
 
-  if (!canRetrieveCode(interaction.member)) {
+  const accessConfig = await getAccessConfig(interaction.guild.id);
+  if (!canRetrieveCode(interaction.member, accessConfig)) {
+    const roleHint = accessConfig.codeRoleId
+      ? `<@&${accessConfig.codeRoleId}>`
+      : `the "${SCRIPTER_ROLE_NAME}" role`;
     await interaction.reply({
-      content: `You don't have permission to use this command (requires the "${SCRIPTER_ROLE_NAME}" role).`,
+      content: `You don't have permission to use this command (requires ${roleHint}).`,
       ephemeral: true,
     });
     return;
@@ -703,7 +880,7 @@ client.on("interactionCreate", async (interaction) => {
 
   const project = sanitizeName(interaction.options.getString("project", true));
   const name = sanitizeName(interaction.options.getString("name", true));
-  const filePath = join(CODE_DIR, project, `${name}.txt`);
+  const filePath = join(guildCodeDir(interaction.guild.id), project, `${name}.txt`);
 
   if (!existsSync(filePath)) {
     await interaction.reply({
