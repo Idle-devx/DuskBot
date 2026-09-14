@@ -342,4 +342,42 @@ export const allCommands = [
         .setDescription("Remove the configured code role (revert to the default 'Scripter' role name)")
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName("antiraid-setup")
+    .setDescription("Configures automatic lockdown when a burst of members joins")
+    .addChannelOption((option) =>
+      option
+        .setName("log_channel")
+        .setDescription("Channel where raid alerts and lockdown logs will be sent")
+        .addChannelTypes(ChannelType.GuildText)
+        .setRequired(true)
+    )
+    .addIntegerOption((option) =>
+      option
+        .setName("join_threshold")
+        .setDescription("How many joins within the time window trigger a lockdown (default 5)")
+        .setMinValue(2)
+        .setMaxValue(100)
+    )
+    .addIntegerOption((option) =>
+      option
+        .setName("time_window_seconds")
+        .setDescription("Time window in seconds to count joins (default 10)")
+        .setMinValue(2)
+        .setMaxValue(300)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("action")
+        .setDescription("What to do to members who joined during the burst (default kick)")
+        .addChoices({ name: "Kick", value: "kick" }, { name: "Ban", value: "ban" })
+    )
+    .addIntegerOption((option) =>
+      option
+        .setName("lockdown_minutes")
+        .setDescription("How long to keep verification raised and invites revoked (default 10)")
+        .setMinValue(1)
+        .setMaxValue(1440)
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 ].map((command) => command.toJSON());
