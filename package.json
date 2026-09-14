@@ -6,6 +6,7 @@
   "main": "index.js",
   "scripts": {
     "deploy": "node deploy-commands.js",
+    "deploy:dev": "node deploy-commands-dev.js",
     "start": "node index.js"
   },
   "dependencies": {
