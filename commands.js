@@ -187,10 +187,10 @@ export const allCommands = [
         .setDescription("Channel where ticket open/close logs and transcripts will be sent")
         .addChannelTypes(ChannelType.GuildText)
     )
-    .addRoleOption((option) =>
+    .addStringOption((option) =>
       option
-        .setName("support_role")
-        .setDescription("Role that can see and manage all tickets (besides Admins)")
+        .setName("support_roles")
+        .setDescription("Mention every role that can manage tickets, e.g. @Staff @Helper (leave empty for none)")
     )
     .addIntegerOption((option) =>
       option
@@ -207,6 +207,9 @@ export const allCommands = [
         .setMaxValue(720)
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName("close")
+    .setDescription("Closes the current ticket (must be used inside a ticket channel)"),
   new SlashCommandBuilder()
     .setName("modlogs-setup")
     .setDescription("Sets the channel where ban/kick/mute/unban logs are sent")
@@ -311,35 +314,35 @@ export const allCommands = [
   new SlashCommandBuilder()
     .setName("access-setup")
     .setDescription("Configures per-server roles for moderation and code-storage commands")
-    .addRoleOption((option) =>
+    .addStringOption((option) =>
       option
-        .setName("moderation_role")
-        .setDescription("Role allowed to use ban/kick/softban/mute/unmute/unban, besides the matching Discord permission")
+        .setName("moderation_roles")
+        .setDescription("Mention every role allowed to use ban/kick/softban/mute/unmute/unban, e.g. @Mod @Helper")
     )
-    .addRoleOption((option) =>
+    .addStringOption((option) =>
       option
-        .setName("save_code_role")
-        .setDescription("Role allowed to use /save-code and /delete-code, besides Mods/Admins")
+        .setName("save_code_roles")
+        .setDescription("Mention every role allowed to use /save-code and /delete-code, besides Mods/Admins")
     )
-    .addRoleOption((option) =>
+    .addStringOption((option) =>
       option
-        .setName("code_role")
-        .setDescription("Role required to use /code (overrides the default 'Scripter' role name)")
-    )
-    .addBooleanOption((option) =>
-      option
-        .setName("clear_moderation_role")
-        .setDescription("Remove the configured moderation role (revert to Discord permissions only)")
+        .setName("code_roles")
+        .setDescription("Mention every role allowed to use /code (overrides the default 'Scripter' role name)")
     )
     .addBooleanOption((option) =>
       option
-        .setName("clear_save_code_role")
-        .setDescription("Remove the configured save-code role (revert to Mods/Admins only)")
+        .setName("clear_moderation_roles")
+        .setDescription("Remove the configured moderation roles (revert to Discord permissions only)")
     )
     .addBooleanOption((option) =>
       option
-        .setName("clear_code_role")
-        .setDescription("Remove the configured code role (revert to the default 'Scripter' role name)")
+        .setName("clear_save_code_roles")
+        .setDescription("Remove the configured save-code roles (revert to Mods/Admins only)")
+    )
+    .addBooleanOption((option) =>
+      option
+        .setName("clear_code_roles")
+        .setDescription("Remove the configured code roles (revert to the default 'Scripter' role name)")
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
