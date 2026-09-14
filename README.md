@@ -8,6 +8,7 @@ Discord bot that responds to the `/ask` command using Groq's free API (open-sour
 - An application/bot created in the [Discord Developer Portal](https://discord.com/developers/applications).
 - A free API key from [console.groq.com](https://console.groq.com).
 - A free API key from [developers.giphy.com](https://developers.giphy.com) (for random GIF replies).
+- The **Server Members Intent** enabled for your app (Discord portal > your app > Bot > Privileged Gateway Intents). This is required for the `/verify-setup` system to detect members joining/leaving.
 
 ## Installation
 
@@ -82,9 +83,23 @@ The bot downloads the file, converts it with ffmpeg, and replies with the GIF. F
 
 Ban, kick, softban, mute, and unban also try to send the affected user a direct message (styled as a Discord embed card, with a colored side bar, title, and fields) explaining what happened, the reason, and who took the action. If the user has DMs closed or doesn't share a server with the bot, this silently fails and the moderation action still goes through normally. You can change the titles, colors, or wording by editing the `DM_EMBED_CONFIG` object and the `buildModEmbed` function at the top of `index.js`.
 
-These commands require your role and the Bot's role to have the corresponding moderation permissions (Discord automatically hides them from members without the right permission). For the Bot to be able to moderate someone, its role must be **above** that person's role in the server's role list.
+**Access control:** these commands are registered without a fixed Discord permission requirement, so they show up for everyone in Discord's command list — access is checked in code instead, in `index.js`. A member can use each command if they have the matching native Discord permission (Ban Members for `/ban`/`/softban`/`/unban`, Kick Members for `/kick`, Moderate Members for `/mute`/`/unmute`), Administrator, **or** the extra `moderation_role` configured per-server via `/access-setup` (see below). For the Bot to be able to moderate someone, its role must still be **above** that person's role in the server's role list.
 
 Each action also posts an embed card visible to everyone in the channel, mentioning the affected user and whoever ran the command. You can change the wording by editing the `MOD_PHRASES` and `DM_EMBED_CONFIG` objects at the top of `index.js`.
+
+### Per-server access configuration
+
+```
+/access-setup moderation_role:[optional role] save_code_role:[optional role] code_role:[optional role] clear_moderation_role:[optional] clear_save_code_role:[optional] clear_code_role:[optional]
+```
+
+Admin-only command that lets each server add an extra allowed role on top of the defaults, without touching code:
+
+- `moderation_role`: also allowed to use `/ban`, `/kick`, `/softban`, `/mute`, `/unmute`, `/unban`, in addition to whoever already has the matching Discord permission.
+- `save_code_role`: also allowed to use `/save-code` and `/delete-code`, in addition to Mods/Admins.
+- `code_role`: the role required to use `/code`. If never set, it defaults to a role literally named **"Scripter"** (change the fallback via `SCRIPTER_ROLE_NAME` at the top of `index.js`).
+
+Use the matching `clear_*` boolean to remove a previously configured role and revert to the default for that one setting. Saved per-server in `access-config.json` (add it to your `.gitignore`). Run the command again anytime to change any of it — options you don't pass are left untouched.
 
 ### Moderation logs channel
 
@@ -127,12 +142,23 @@ Only the ticket opener, the support role, and members with Administrator/Manage 
 
 All of this logic lives in `tickets.js`, kept separate from `index.js` to keep things organized.
 
+### Member verification
+
+```
+/verify-setup panel_channel:[channel] verified_role:[role] kick_hours:[optional, default 24] log_channel:[optional]
+```
+
+Admin-only command that posts a persistent embed with a **"Verify"** button in `panel_channel`. When a new member joins, the bot starts tracking them as "pending"; clicking the button grants them `verified_role`. If a member doesn't verify within `kick_hours` (checked every 5 minutes, default 24h), the bot automatically kicks them and logs it. Run the command again anytime to move the panel or change any setting — it's saved per-server in `verify-config.json`, with pending members tracked in `verify-state.json` (add both to your `.gitignore`).
+
+If `log_channel` is set, joins, verifications, and auto-kicks are all posted there. All of this logic lives in `verify.js`. Requires the **Server Members Intent** to be enabled for your bot (see Requirements above) — without it, the bot won't see members joining or leaving.
+
 ### Code snippet storage
 
-- `/save-code project:[name] name:[filename] file:[optional attachment] content:[optional plain text]` — saves a file or plain text snippet into a project folder on the server's disk. Requires Moderate Members or Administrator permission. You need either `file` or `content` (or both).
-- `/code project:[name] name:[filename]` — retrieves a previously saved snippet. Open to everyone at the Discord level, but internally requires either the **"Scripter"** role or Admin/Mod permissions (change the role name by editing `SCRIPTER_ROLE_NAME` at the top of `index.js`).
+- `/save-code project:[name] name:[filename] file:[optional attachment] content:[optional plain text]` — saves a file or plain text snippet into a project folder. Requires Moderate Members/Administrator, or the server's configured `save_code_role` (see `/access-setup`). You need either `file` or `content` (or both).
+- `/delete-code project:[name] name:[optional filename]` — deletes a single saved file, or, if `name` is omitted, the **entire project folder**. Same permission requirement as `/save-code`.
+- `/code project:[name] name:[filename]` — retrieves a previously saved snippet. Open to everyone at the Discord level, but internally requires Moderate Members/Administrator, the server's configured `code_role`, or (if no `code_role` was ever set) a role literally named **"Scripter"**.
 
-Both commands have autocomplete for `project` (and `name` on `/code`) based on what's already saved. Files are stored under a `codigos/` folder next to `index.js` — this folder is **not** meant to be committed to git (make sure it's in your `.gitignore`).
+All three commands have autocomplete for `project` (and `name` on `/code`/`/delete-code`) based on what's already saved for that server. Files are stored under `codigos/<guildId>/...` next to `index.js` — **isolated per server**, so a mod on one server can never read or delete another server's files. This whole `codigos/` folder is **not** meant to be committed to git (make sure it's in your `.gitignore`).
 
 ### Random GIF replies
 
