@@ -110,18 +110,18 @@ Note: this command doesn't support forums that require mandatory tags yet.
 ### Ticket system
 
 ```
-/ticket-setup panel_channel:[channel] category:[optional] log_channel:[optional] support_role:[optional] alert_hours:[optional, default 3] inactivity_hours:[optional, default 24]
+/ticket-setup panel_channel:[channel] category:[optional] log_channel:[optional] support_roles:[optional, mention roles e.g. @Staff @Helper] alert_hours:[optional, default 3] inactivity_hours:[optional, default 24]
 ```
 
-Admin-only command that posts a persistent embed with an "Open Ticket" button in `panel_channel`. Run it again anytime to move the panel or change any setting — it's saved per-server in `tickets-config.json` (make sure that file is in your `.gitignore`, it's local state, not code).
+Admin-only command that posts a persistent embed with an "Open Ticket" button in `panel_channel`. Run it again anytime to move the panel or change any setting — it's saved per-server in `tickets-config.json` (make sure that file is in your `.gitignore`, it's local state, not code). `support_roles` accepts multiple roles — just @mention all of them in that one option (e.g. `@Staff @Helper`).
 
 How it works for users:
 1. They click **"Open Ticket"** on the panel.
 2. They pick a category from a dropdown (edit the `TICKET_CATEGORIES` array at the top of `tickets.js` to customize these).
-3. A private text channel is created (visible only to them, the support role if configured, and Admins/Manage Channels), with a welcome message and a **"Close Ticket"** button.
-4. Anyone with permission clicks **"Close Ticket"** — the bot generates a plain-text transcript of the whole conversation, sends it to the log channel (if configured), and deletes the ticket channel a few seconds later.
+3. A private text channel is created (visible only to them, any configured support roles, and Admins/Manage Channels), with a welcome message and a **"Close Ticket"** button.
+4. Anyone with permission clicks **"Close Ticket"**, or runs **`/close`** inside the ticket channel (does the same thing, no need to scroll to find the button) — the bot generates a plain-text transcript of the whole conversation, sends it to the log channel (if configured), and deletes the ticket channel a few seconds later.
 
-Only the ticket opener, the support role, and members with Administrator/Manage Channels can close a ticket manually.
+Only the ticket opener, any of the configured support roles, and members with Administrator/Manage Channels can close a ticket (via button or `/close`).
 
 **Inactivity alert and auto-close:** a background check runs every 5 minutes. If a ticket has been open longer than `alert_hours` (default 3) without being closed, the bot posts a one-time reminder in the channel (pinging the support role, if set). If a ticket goes `inactivity_hours` (default 24) with **zero messages** from anyone, it closes automatically the same way the button does (transcript + log + delete) — the inactivity timer resets on every new message in the channel. Open-ticket tracking is stored in `tickets-state.json` (also add this to your `.gitignore`).
 
@@ -142,6 +142,22 @@ Admin-only command. If **`join_threshold`+ members join within `time_window_seco
 5. After `lockdown_minutes`, automatically reverts the verification level back to what it was before (revoked invites stay revoked — create new ones manually if needed).
 
 This is a heuristic, not a guarantee: a slow, spread-out raid that stays under your threshold won't trigger it, and a genuine viral growth spurt could false-positive into a lockdown. Tune `join_threshold` and `time_window_seconds` to what's normal for your server. Bots added via OAuth don't count toward the join burst (only regular accounts do). All of this logic lives in `antiraid.js`.
+
+### Per-server access roles
+
+```
+/access-setup moderation_roles:[optional, mention roles] save_code_roles:[optional, mention roles] code_roles:[optional, mention roles] clear_moderation_roles:[optional] clear_save_code_roles:[optional] clear_code_roles:[optional]
+```
+
+Admin-only command. Moderation commands, `/save-code`/`/delete-code`, and `/code` are registered without Discord's native permission restrictions — access is fully controlled in `index.js` instead, so each server can layer its own extra role(s) on top of the usual Discord permissions:
+
+- `moderation_roles`: can use ban/kick/softban/mute/unmute/unban, in addition to whoever already has the matching native Discord permission (Ban Members, Kick Members, Moderate Members) or Administrator.
+- `save_code_roles`: can use `/save-code` and `/delete-code`, in addition to Mods/Admins.
+- `code_roles`: required to use `/code` — if you don't set this, it falls back to anyone with a role literally named **"Scripter"** (change `SCRIPTER_ROLE_NAME` at the top of `index.js` if you want a different default name).
+
+Each of these accepts **multiple roles** — just @mention all of them in the same option (e.g. `@Mod @Trusted`). Use the matching `clear_*` boolean to remove a configured set of roles and fall back to the defaults above. Saved per-server in `access-config.json` (add it to your `.gitignore`).
+
+**Every configuration in this bot — tickets, verification, moderation logs, anti-raid, access roles, and code storage — is stored per-server (keyed by the server's ID).** Running the bot on multiple servers never mixes their settings or data together.
 
 ### Code snippet storage
 
