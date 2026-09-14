@@ -106,6 +106,14 @@ async function setAccessConfig(guildId, partial) {
   return config[guildId];
 }
 
+// Extracts every role ID mentioned in a string like "@Mod @Helper" (as
+// Discord sends it: "<@&123> <@&456>"). Returns an array, possibly empty.
+function parseRoleMentions(text) {
+  if (!text) return [];
+  const matches = [...text.matchAll(/<@&(\d+)>/g)];
+  return [...new Set(matches.map((m) => m[1]))];
+}
+
 // Full sentence shown as the log message's plain-text content, above the embed.
 const LOG_ANNOUNCE = {
   ban: "A user has been banned.",
@@ -263,8 +271,8 @@ async function ensureGuildCodeDir(guildId) {
   return dir;
 }
 
-// Admins/Mods can always save, plus whatever extra role a server configured
-// via /access-setup (save_code_role). Also gates /delete-code.
+// Admins/Mods can always save, plus any extra role a server configured via
+// /access-setup (save_code_roles). Also gates /delete-code.
 function canSaveCode(member, accessConfig = {}) {
   if (
     member.permissions.has(PermissionFlagsBits.ModerateMembers) ||
@@ -272,20 +280,17 @@ function canSaveCode(member, accessConfig = {}) {
   ) {
     return true;
   }
-  if (accessConfig.saveCodeRoleId && member.roles.cache.has(accessConfig.saveCodeRoleId)) {
-    return true;
-  }
-  return false;
+  return (accessConfig.saveCodeRoleIds ?? []).some((id) => member.roles.cache.has(id));
 }
 
-// Anyone who can save (Admins/Mods/configured save_code_role) can also
-// retrieve. Otherwise: the server's configured code_role, or the default
-// "Scripter" role name if no code_role has been set.
+// Anyone who can save (Admins/Mods/configured save_code_roles) can also
+// retrieve. Otherwise: any of the server's configured code_roles, or the
+// default "Scripter" role name if none have been set.
 function canRetrieveCode(member, accessConfig = {}) {
   if (canSaveCode(member, accessConfig)) return true;
 
-  if (accessConfig.codeRoleId) {
-    return member.roles.cache.has(accessConfig.codeRoleId);
+  if (accessConfig.codeRoleIds?.length) {
+    return accessConfig.codeRoleIds.some((id) => member.roles.cache.has(id));
   }
 
   return member.roles.cache.some((role) => role.name === SCRIPTER_ROLE_NAME);
@@ -491,8 +496,7 @@ client.on("interactionCreate", async (interaction) => {
   const hasAccess =
     interaction.member.permissions.has(PermissionFlagsBits.Administrator) ||
     interaction.member.permissions.has(REQUIRED_NATIVE_PERMISSION[interaction.commandName]) ||
-    (accessConfig.moderationRoleId &&
-      interaction.member.roles.cache.has(accessConfig.moderationRoleId));
+    (accessConfig.moderationRoleIds ?? []).some((id) => interaction.member.roles.cache.has(id));
 
   if (!hasAccess) {
     await interaction.reply({
@@ -664,33 +668,39 @@ client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName !== "access-setup") return;
 
-  const moderationRole = interaction.options.getRole("moderation_role");
-  const saveCodeRole = interaction.options.getRole("save_code_role");
-  const codeRole = interaction.options.getRole("code_role");
-  const clearModerationRole = interaction.options.getBoolean("clear_moderation_role");
-  const clearSaveCodeRole = interaction.options.getBoolean("clear_save_code_role");
-  const clearCodeRole = interaction.options.getBoolean("clear_code_role");
+  const moderationRoleIds = parseRoleMentions(interaction.options.getString("moderation_roles"));
+  const saveCodeRoleIds = parseRoleMentions(interaction.options.getString("save_code_roles"));
+  const codeRoleIds = parseRoleMentions(interaction.options.getString("code_roles"));
+  const clearModerationRoles = interaction.options.getBoolean("clear_moderation_roles");
+  const clearSaveCodeRoles = interaction.options.getBoolean("clear_save_code_roles");
+  const clearCodeRoles = interaction.options.getBoolean("clear_code_roles");
 
   await interaction.deferReply({ ephemeral: true });
 
   try {
     const update = {};
 
-    if (clearModerationRole) update.moderationRoleId = null;
-    else if (moderationRole) update.moderationRoleId = moderationRole.id;
+    if (clearModerationRoles) update.moderationRoleIds = [];
+    else if (moderationRoleIds.length) update.moderationRoleIds = moderationRoleIds;
 
-    if (clearSaveCodeRole) update.saveCodeRoleId = null;
-    else if (saveCodeRole) update.saveCodeRoleId = saveCodeRole.id;
+    if (clearSaveCodeRoles) update.saveCodeRoleIds = [];
+    else if (saveCodeRoleIds.length) update.saveCodeRoleIds = saveCodeRoleIds;
 
-    if (clearCodeRole) update.codeRoleId = null;
-    else if (codeRole) update.codeRoleId = codeRole.id;
+    if (clearCodeRoles) update.codeRoleIds = [];
+    else if (codeRoleIds.length) update.codeRoleIds = codeRoleIds;
 
     const config = await setAccessConfig(interaction.guild.id, update);
 
+    const listOrDefault = (ids, fallback) =>
+      ids?.length ? ids.map((id) => `<@&${id}>`).join(", ") : fallback;
+
     const summary = [
-      `**Moderation role:** ${config.moderationRoleId ? `<@&${config.moderationRoleId}>` : "none (Discord permissions only)"}`,
-      `**save-code/delete-code role:** ${config.saveCodeRoleId ? `<@&${config.saveCodeRoleId}>` : "none (Mods/Admins only)"}`,
-      `**code role:** ${config.codeRoleId ? `<@&${config.codeRoleId}>` : `none configured (defaults to the "${SCRIPTER_ROLE_NAME}" role name)`}`,
+      `**Moderation roles:** ${listOrDefault(config.moderationRoleIds, "none (Discord permissions only)")}`,
+      `**save-code/delete-code roles:** ${listOrDefault(config.saveCodeRoleIds, "none (Mods/Admins only)")}`,
+      `**code roles:** ${listOrDefault(
+        config.codeRoleIds,
+        `none configured (defaults to the "${SCRIPTER_ROLE_NAME}" role name)`
+      )}`,
     ].join("\n");
 
     await interaction.editReply(`✅ Access configuration updated.\n${summary}`);
@@ -870,8 +880,8 @@ client.on("interactionCreate", async (interaction) => {
 
   const accessConfig = await getAccessConfig(interaction.guild.id);
   if (!canRetrieveCode(interaction.member, accessConfig)) {
-    const roleHint = accessConfig.codeRoleId
-      ? `<@&${accessConfig.codeRoleId}>`
+    const roleHint = accessConfig.codeRoleIds?.length
+      ? accessConfig.codeRoleIds.map((id) => `<@&${id}>`).join(", ")
       : `the "${SCRIPTER_ROLE_NAME}" role`;
     await interaction.reply({
       content: `You don't have permission to use this command (requires ${roleHint}).`,
