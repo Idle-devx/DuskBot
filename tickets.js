@@ -85,6 +85,19 @@ async function removeTicketState(channelId) {
   await saveJSON(STATE_PATH, state);
 }
 
+// Finds an already-open ticket channel for this user in this guild, using
+// the persisted state instead of the channel cache/topic (the cache can be
+// incomplete right after a bot restart, causing missed duplicates).
+async function findOpenTicketChannelId(guildId, userId) {
+  const state = await getState();
+  for (const [channelId, ticket] of Object.entries(state)) {
+    if (ticket.guildId === guildId && ticket.openerId === userId) {
+      return channelId;
+    }
+  }
+  return null;
+}
+
 // --- UI builders ---
 
 function buildPanelEmbed() {
@@ -247,11 +260,18 @@ function startBackgroundChecker(client) {
           continue;
         }
 
-        if (!ticket.alertSent && hoursSinceOpen >= alertHours) {
+        // Recurring nudge to the ticket opener (not staff): fires once when
+        // the ticket has been inactive for `alertHours`, then again every
+        // `alertHours` of continued inactivity until someone replies or it
+        // auto-closes.
+        const lastAlertAt = ticket.lastAlertAt ?? ticket.openedAt;
+        const hoursSinceLastAlert = (now - lastAlertAt) / 3600000;
+
+        if (hoursSinceActivity >= alertHours && hoursSinceLastAlert >= alertHours) {
           await channel.send(
-            `<@${ticket.openerId}> ⏰ This ticket has been open for over ${alertHours} hour(s) without being closed. Please follow up if you still need help.`
+            `<@${ticket.openerId}> ⏰ This ticket has had no activity for over ${alertHours} hour(s). Please follow up if you still need help, otherwise it may be auto-closed after ${inactivityHours} hour(s) of inactivity.`
           );
-          await setTicketState(channelId, { alertSent: true });
+          await setTicketState(channelId, { lastAlertAt: now });
         }
       } catch (error) {
         console.error(`Error checking ticket ${channelId}:`, error);
@@ -336,19 +356,22 @@ export function registerTicketHandlers(client) {
 
       await interaction.deferUpdate();
 
-      // Prevent duplicate open tickets from the same user.
-      const existing = interaction.guild.channels.cache.find(
-        (ch) =>
-          ch.type === ChannelType.GuildText &&
-          ch.topic &&
-          ch.topic.includes(`opener:${interaction.user.id}`)
-      );
-      if (existing) {
-        await interaction.followUp({
-          content: `You already have an open ticket: <#${existing.id}>`,
-          ephemeral: true,
-        });
-        return;
+      // Prevent duplicate open tickets from the same user. Uses the
+      // persisted ticket state (not the channel cache) so it's reliable
+      // even right after a bot restart.
+      const existingChannelId = await findOpenTicketChannelId(interaction.guild.id, interaction.user.id);
+      if (existingChannelId) {
+        const existingChannel = await interaction.guild.channels.fetch(existingChannelId).catch(() => null);
+        if (existingChannel) {
+          await interaction.followUp({
+            content: `You already have an open ticket: <#${existingChannelId}>`,
+            ephemeral: true,
+          });
+          return;
+        }
+        // Stale state pointing at a channel that no longer exists — clean
+        // it up and let the user open a fresh ticket.
+        await removeTicketState(existingChannelId);
       }
 
       try {
@@ -402,7 +425,7 @@ export function registerTicketHandlers(client) {
           openerId: interaction.user.id,
           openedAt: now,
           lastActivityAt: now,
-          alertSent: false,
+          lastAlertAt: now,
         });
 
         await interaction.followUp({
