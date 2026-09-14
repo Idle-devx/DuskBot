@@ -86,6 +86,14 @@ These commands require your role and the Bot's role to have the corresponding mo
 
 Each action also posts an embed card visible to everyone in the channel, mentioning the affected user and whoever ran the command. You can change the wording by editing the `MOD_PHRASES` and `DM_EMBED_CONFIG` objects at the top of `index.js`.
 
+### Moderation logs channel
+
+```
+/modlogs-setup log_channel:[channel]
+```
+
+Admin-only command that sets a dedicated channel where every ban, kick, softban, mute, unmute, and unban gets logged as its own styled embed (title like "User Banned", with User, User ID, Staff, and Reason fields — plus Duration for mutes). This is separate from the in-channel confirmation message and from the DM sent to the affected user; it's meant as a permanent audit log for staff. Saved per-server in `modlogs-config.json` (add it to your `.gitignore`). Run the command again anytime to change the channel.
+
 ### Forum posts
 
 ```
@@ -98,6 +106,26 @@ Each action also posts an embed card visible to everyone in the channel, mention
 - `image1`, `image2`, `image3` (optional): up to 3 images attached to the post.
 
 Note: this command doesn't support forums that require mandatory tags yet.
+
+### Ticket system
+
+```
+/ticket-setup panel_channel:[channel] category:[optional] log_channel:[optional] support_role:[optional] alert_hours:[optional, default 3] inactivity_hours:[optional, default 24]
+```
+
+Admin-only command that posts a persistent embed with an "Open Ticket" button in `panel_channel`. Run it again anytime to move the panel or change any setting — it's saved per-server in `tickets-config.json` (make sure that file is in your `.gitignore`, it's local state, not code).
+
+How it works for users:
+1. They click **"Open Ticket"** on the panel.
+2. They pick a category from a dropdown (edit the `TICKET_CATEGORIES` array at the top of `tickets.js` to customize these).
+3. A private text channel is created (visible only to them, the support role if configured, and Admins/Manage Channels), with a welcome message and a **"Close Ticket"** button.
+4. Anyone with permission clicks **"Close Ticket"** — the bot generates a plain-text transcript of the whole conversation, sends it to the log channel (if configured), and deletes the ticket channel a few seconds later.
+
+Only the ticket opener, the support role, and members with Administrator/Manage Channels can close a ticket manually.
+
+**Inactivity alert and auto-close:** a background check runs every 5 minutes. If a ticket has been open longer than `alert_hours` (default 3) without being closed, the bot posts a one-time reminder in the channel (pinging the support role, if set). If a ticket goes `inactivity_hours` (default 24) with **zero messages** from anyone, it closes automatically the same way the button does (transcript + log + delete) — the inactivity timer resets on every new message in the channel. Open-ticket tracking is stored in `tickets-state.json` (also add this to your `.gitignore`).
+
+All of this logic lives in `tickets.js`, kept separate from `index.js` to keep things organized.
 
 ### Code snippet storage
 
