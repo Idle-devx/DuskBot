@@ -191,4 +191,32 @@ export const commands = [
         .setRequired(true)
         .setAutocomplete(true)
     ),
+  new SlashCommandBuilder()
+    .setName("ticket-setup")
+    .setDescription("Sets up (or updates) the ticket panel")
+    .addChannelOption((option) =>
+      option
+        .setName("panel_channel")
+        .setDescription("Channel where the 'Open Ticket' button will be posted")
+        .addChannelTypes(ChannelType.GuildText)
+        .setRequired(true)
+    )
+    .addChannelOption((option) =>
+      option
+        .setName("category")
+        .setDescription("Category where new ticket channels will be created")
+        .addChannelTypes(ChannelType.GuildCategory)
+    )
+    .addChannelOption((option) =>
+      option
+        .setName("log_channel")
+        .setDescription("Channel where ticket open/close logs and transcripts will be sent")
+        .addChannelTypes(ChannelType.GuildText)
+    )
+    .addRoleOption((option) =>
+      option
+        .setName("support_role")
+        .setDescription("Role that can see and manage all tickets (besides Admins)")
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 ].map((command) => command.toJSON());
