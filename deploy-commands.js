@@ -2,7 +2,7 @@
 // bot is on, but can take up to 1 hour to propagate for new/renamed commands).
 // For instant testing on a single server, use deploy-commands-dev.js instead.
 import { REST, Routes } from "discord.js";
-import { commands } from "./commands.js";
+import { allCommands } from "./commands.js";
 import "dotenv/config";
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
@@ -12,7 +12,7 @@ try {
 
   await rest.put(
     Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
-    { body: commands }
+    { body: allCommands }
   );
 
   console.log("Commands registered successfully!");
