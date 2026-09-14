@@ -1,12 +1,13 @@
 # Discord Bot with AI (Groq)
 
-Discord bot that responds to the `/pregunta` command using Groq's free API (open-source models like Llama).
+Discord bot that responds to the `/ask` command using Groq's free API (open-source models like Llama), plus moderation, GIF conversion, forum posting, and a small code snippet storage system.
 
 ## Requirements
 
 - [Node.js](https://nodejs.org) version 18 or higher.
 - An application/bot created in the [Discord Developer Portal](https://discord.com/developers/applications).
 - A free API key from [console.groq.com](https://console.groq.com).
+- A free API key from [developers.giphy.com](https://developers.giphy.com) (for random GIF replies).
 
 ## Installation
 
@@ -26,12 +27,21 @@ Discord bot that responds to the `/pregunta` command using Groq's free API (open
    - `DISCORD_CLIENT_ID`: Application ID (Discord portal > your app > General Information).
    - `DISCORD_GUILD_ID`: your server's ID (right-click your server icon > Copy Server ID, requires Developer Mode enabled in Discord). No longer used for command registration (commands are now global), kept in case you need it later.
    - `GROQ_API_KEY`: your free Groq API key.
+   - `GIPHY_API_KEY`: your free GIPHY API key.
 
 3. Register the slash commands globally, so they work on any server the bot joins (only needed once, or whenever you change a command — can take up to 1 hour to propagate the first time):
 
    ```bash
    npm run deploy
    ```
+
+   For instant testing on a single server instead of waiting for the global rollout, use your test server's ID (`DISCORD_GUILD_ID` in `.env`) with:
+
+   ```bash
+   npm run deploy:dev
+   ```
+
+   This updates commands almost immediately, but only on that one server. Useful while developing — switch back to `npm run deploy` when you're ready to publish a change everywhere.
 
 4. Start the bot:
 
@@ -44,7 +54,7 @@ Discord bot that responds to the `/pregunta` command using Groq's free API (open
 In any channel where the bot is present, type:
 
 ```
-/pregunta mensaje: What is the capital of France?
+/ask message: What is the capital of France?
 ```
 
 The bot will respond using an AI model. Each channel keeps its own recent conversation history (in memory, lost if the bot restarts) to keep responses contextual.
@@ -52,29 +62,49 @@ The bot will respond using an AI model. Each channel keeps its own recent conver
 ### Convert video or image to GIF
 
 ```
-/gif archivo: [attach your video or image] duracion: 5 ancho: 320
+/gif file: [attach your video or image] duration: 5 width: 320
 ```
 
-- `archivo` (required): the video or image you want to convert.
-- `duracion` (optional, default 5): seconds to take from the start of the video (max 15).
-- `ancho` (optional, default 320): width in pixels of the resulting GIF; height adjusts automatically.
+- `file` (required): the video or image you want to convert.
+- `duration` (optional, default 5): seconds to take from the start of the video (max 15).
+- `width` (optional, default 320): width in pixels of the resulting GIF; height adjusts automatically.
 
 The bot downloads the file, converts it with ffmpeg, and replies with the GIF. Files over 25 MB are not accepted.
 
 ### Moderation
 
-- `/ban usuario:[user] razon:[optional] dias_borrado:[0-7, optional]` — permanently bans.
-- `/kick usuario:[user] razon:[optional]` — kicks from the server (they can rejoin with an invite).
-- `/softban usuario:[user] razon:[optional] dias_borrado:[optional, default 1]` — bans and immediately unbans. **This already wipes the user's recent messages** (based on the days set in `dias_borrado`) since it technically bans them for an instant before unbanning; the user can rejoin with a new invite.
-- `/mute usuario:[user] minutos:[1-40320] razon:[optional]` — mutes (Discord's native timeout) for the given time.
-- `/unmute usuario:[user]` — removes the mute before it expires.
-- `/unban usuario_id:[user ID] razon:[optional]` — unbans using the user's ID (since a banned user can't be selected from the member list).
+- `/ban user:[user] reason:[optional] delete_days:[0-7, optional]` — permanently bans.
+- `/kick user:[user] reason:[optional]` — kicks from the server (they can rejoin with an invite).
+- `/softban user:[user] reason:[optional] delete_days:[optional, default 1]` — bans and immediately unbans. **This already wipes the user's recent messages** (based on the days set in `delete_days`) since it technically bans them for an instant before unbanning; the user can rejoin with a new invite.
+- `/mute user:[user] minutes:[1-40320] reason:[optional]` — mutes (Discord's native timeout) for the given time.
+- `/unmute user:[user]` — removes the mute before it expires.
+- `/unban user_id:[user ID] reason:[optional]` — unbans using the user's ID (since a banned user can't be selected from the member list).
 
 Ban, kick, softban, mute, and unban also try to send the affected user a direct message (styled as a Discord embed card, with a colored side bar, title, and fields) explaining what happened, the reason, and who took the action. If the user has DMs closed or doesn't share a server with the bot, this silently fails and the moderation action still goes through normally. You can change the titles, colors, or wording by editing the `DM_EMBED_CONFIG` object and the `buildModEmbed` function at the top of `index.js`.
 
 These commands require your role and the Bot's role to have the corresponding moderation permissions (Discord automatically hides them from members without the right permission). For the Bot to be able to moderate someone, its role must be **above** that person's role in the server's role list.
 
-Each action posts a message visible to everyone in the channel, mentioning the affected user and whoever ran the command (e.g., "@user was sent to Ban Island by @moderator 🔨"). You can change the wording of these phrases by editing the `MOD_PHRASES` object at the top of `index.js`.
+Each action also posts an embed card visible to everyone in the channel, mentioning the affected user and whoever ran the command. You can change the wording by editing the `MOD_PHRASES` and `DM_EMBED_CONFIG` objects at the top of `index.js`.
+
+### Forum posts
+
+```
+/forum channel: [pick a forum channel] title: My post content: Post text here image1: [optional]
+```
+
+- `channel` (required): must be a forum-type channel (the picker only shows forum channels).
+- `title` (required, max 100 characters).
+- `content` (required, max 2000 characters).
+- `image1`, `image2`, `image3` (optional): up to 3 images attached to the post.
+
+Note: this command doesn't support forums that require mandatory tags yet.
+
+### Code snippet storage
+
+- `/save-code project:[name] name:[filename] file:[optional attachment] content:[optional plain text]` — saves a file or plain text snippet into a project folder on the server's disk. Requires Moderate Members or Administrator permission. You need either `file` or `content` (or both).
+- `/code project:[name] name:[filename]` — retrieves a previously saved snippet. Open to everyone at the Discord level, but internally requires either the **"Scripter"** role or Admin/Mod permissions (change the role name by editing `SCRIPTER_ROLE_NAME` at the top of `index.js`).
+
+Both commands have autocomplete for `project` (and `name` on `/code`) based on what's already saved. Files are stored under a `codigos/` folder next to `index.js` — this folder is **not** meant to be committed to git (make sure it's in your `.gitignore`).
 
 ### Random GIF replies
 
