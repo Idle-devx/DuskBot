@@ -65,6 +65,24 @@ async function removeTicketState(channelId) {
   });
 }
 
+// In-memory mirror of which channel IDs currently have ticket state, kept in
+// sync with tickets-state.json. Lets messageCreate (fired for every message
+// in the whole guild) skip the JSON-store lock/read for the vast majority of
+// messages that aren't in a ticket channel at all.
+const openTicketChannelIds = new Set();
+
+async function loadOpenTicketChannelIds() {
+  const state = await getState();
+  for (const channelId of Object.keys(state)) {
+    openTicketChannelIds.add(channelId);
+  }
+}
+
+// Channels currently mid-close, guarding against a double "Close Ticket"
+// click (or button + /close in quick succession) generating and posting the
+// transcript twice.
+const closingChannels = new Set();
+
 // Extracts every role ID mentioned in a string like "@Staff @Helper" (as
 // Discord sends it: "<@&123> <@&456>"). Returns an array, possibly empty.
 function parseRoleMentions(text) {
@@ -184,45 +202,56 @@ async function buildTranscript(channel) {
 // the delay, the ticket is still in tickets-state.json and can simply be
 // closed again.
 async function closeTicketChannel(channel, closedByText) {
-  try {
-    const guildConfig = await getGuildConfig(channel.guild.id);
-    const transcriptText = await buildTranscript(channel);
-    const tempDir = await mkdtemp(join(tmpdir(), "ticket-"));
-    const transcriptPath = join(tempDir, `${channel.name}.txt`);
-    await writeFile(transcriptPath, transcriptText, "utf-8");
+  // Guards against a double "Close Ticket" click (or button + /close fired
+  // almost simultaneously) generating and posting the transcript twice and
+  // racing on channel.delete().
+  if (closingChannels.has(channel.id)) return;
+  closingChannels.add(channel.id);
 
-    if (guildConfig?.logChannelId) {
-      const logChannel = await channel.guild.channels.fetch(guildConfig.logChannelId).catch(() => null);
-      if (logChannel) {
-        const logEmbed = new EmbedBuilder()
-          .setColor(0xed4245)
-          .setTitle("🔒 Ticket closed")
-          .addFields(
-            { name: "Channel", value: `#${channel.name}`, inline: true },
-            { name: "Closed by", value: closedByText, inline: true }
-          )
-          .setTimestamp();
-        await logChannel.send({
-          embeds: [logEmbed],
-          files: [{ attachment: transcriptPath, name: `${channel.name}.txt` }],
-        });
+  try {
+    try {
+      const guildConfig = await getGuildConfig(channel.guild.id);
+      const transcriptText = await buildTranscript(channel);
+      const tempDir = await mkdtemp(join(tmpdir(), "ticket-"));
+      const transcriptPath = join(tempDir, `${channel.name}.txt`);
+      await writeFile(transcriptPath, transcriptText, "utf-8");
+
+      if (guildConfig?.logChannelId) {
+        const logChannel = await channel.guild.channels.fetch(guildConfig.logChannelId).catch(() => null);
+        if (logChannel) {
+          const logEmbed = new EmbedBuilder()
+            .setColor(0xed4245)
+            .setTitle("🔒 Ticket closed")
+            .addFields(
+              { name: "Channel", value: `#${channel.name}`, inline: true },
+              { name: "Closed by", value: closedByText, inline: true }
+            )
+            .setTimestamp();
+          await logChannel.send({
+            embeds: [logEmbed],
+            files: [{ attachment: transcriptPath, name: `${channel.name}.txt` }],
+          });
+        }
       }
+
+      await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    } catch (error) {
+      console.error("Error generating transcript:", error);
     }
 
-    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
-  } catch (error) {
-    console.error("Error generating transcript:", error);
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
+    try {
+      await channel.delete();
+    } catch (error) {
+      console.error("Error deleting ticket channel:", error);
+    }
+
+    await removeTicketState(channel.id);
+    openTicketChannelIds.delete(channel.id);
+  } finally {
+    closingChannels.delete(channel.id);
   }
-
-  await new Promise((resolve) => setTimeout(resolve, 5000));
-
-  try {
-    await channel.delete();
-  } catch (error) {
-    console.error("Error deleting ticket channel:", error);
-  }
-
-  await removeTicketState(channel.id);
 }
 
 // Background job: checks every ticket being tracked and sends the inactivity
@@ -238,6 +267,7 @@ function startBackgroundChecker(client) {
         if (!channel) {
           // Channel no longer exists (deleted manually) — stop tracking it.
           await removeTicketState(channelId);
+          openTicketChannelIds.delete(channelId);
           continue;
         }
 
@@ -272,14 +302,17 @@ function startBackgroundChecker(client) {
 }
 
 export function registerTicketHandlers(client) {
-  client.once("ready", () => startBackgroundChecker(client));
+  client.once("ready", async () => {
+    await loadOpenTicketChannelIds();
+    startBackgroundChecker(client);
+  });
 
   // Tracks activity (any message) in open ticket channels so the
-  // inactivity timer resets.
+  // inactivity timer resets. Checks the in-memory Set first so a message in
+  // any of the guild's non-ticket channels never touches the JSON store.
   client.on("messageCreate", async (message) => {
     if (!message.guild) return;
-    const state = await getState();
-    if (!state[message.channel.id]) return;
+    if (!openTicketChannelIds.has(message.channel.id)) return;
     await setTicketState(message.channel.id, { lastActivityAt: Date.now() });
   });
 
@@ -418,6 +451,7 @@ export function registerTicketHandlers(client) {
           lastActivityAt: now,
           alertSent: false,
         });
+        openTicketChannelIds.add(ticketChannel.id);
 
         await interaction.followUp({
           content: `✅ Your ticket was created: <#${ticketChannel.id}>`,
@@ -467,6 +501,11 @@ export function registerTicketHandlers(client) {
         return;
       }
 
+      if (closingChannels.has(channel.id)) {
+        await interaction.reply({ content: "This ticket is already being closed.", ephemeral: true });
+        return;
+      }
+
       await interaction.reply("🔒 Closing this ticket in 5 seconds, generating transcript...");
       await closeTicketChannel(channel, `<@${interaction.user.id}>`);
       return;
@@ -495,6 +534,11 @@ export function registerTicketHandlers(client) {
           content: "You don't have permission to close this ticket.",
           ephemeral: true,
         });
+        return;
+      }
+
+      if (closingChannels.has(channel.id)) {
+        await interaction.reply({ content: "This ticket is already being closed.", ephemeral: true });
         return;
       }
 

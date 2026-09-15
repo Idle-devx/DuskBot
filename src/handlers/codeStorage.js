@@ -69,11 +69,17 @@ async function listFiles(guildId, project) {
 }
 
 // Sanitizes project/file names so they can't be used to escape CODE_DIR
-// (e.g. "../../etc") or include odd path characters. Returns null if
-// nothing usable is left after stripping — callers must check for that
-// instead of silently writing into the guild's root code folder.
+// (e.g. "../../etc"), include odd path characters, or (on NTFS) address an
+// Alternate Data Stream via a colon (e.g. "x:hidden" silently writing into
+// a hidden stream instead of a normal file). Returns null if nothing usable
+// is left after stripping — callers must check for that instead of
+// silently writing into the guild's root code folder.
 function sanitizeName(name) {
-  const cleaned = name.replace(/[\\/]/g, "-").replace(/\.\./g, "-").trim();
+  const cleaned = name
+    .replace(/[\\/]/g, "-")
+    .replace(/\.\./g, "-")
+    .replace(/[:*?"<>|\x00-\x1f]/g, "-")
+    .trim();
   return cleaned.length > 0 ? cleaned : null;
 }
 
