@@ -20,4 +20,6 @@ jobs:
             git pull origin main
             npm install
             npm run deploy
-            pm2 restart duskbot
+            pm2 delete duskbot || true
+            pm2 start npm --name duskbot -- start
+            pm2 save
