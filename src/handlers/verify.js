@@ -1,70 +1,44 @@
 // Member verification system: posts a panel with a "Verify" button, grants a
 // role on click, and auto-kicks members who never verify within a
-// configurable window. Kept separate from index.js, same pattern as
-// tickets.js.
+// configurable window.
 import {
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
 } from "discord.js";
-import { readFile, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { DATA_DIR } from "../lib/constants.js";
+import { getGuildValue, setGuildValue, updateJSON, readJSON } from "../lib/jsonStore.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-const CONFIG_PATH = join(__dirname, "verify-config.json");
-const STATE_PATH = join(__dirname, "verify-state.json");
+const CONFIG_PATH = join(DATA_DIR, "verify-config.json");
+const STATE_PATH = join(DATA_DIR, "verify-state.json");
 
 const VERIFY_BUTTON_ID = "verify_button";
 const DEFAULT_KICK_HOURS = 24;
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes, same cadence as tickets.js
 
-async function loadJSON(path) {
-  if (!existsSync(path)) return {};
-  try {
-    return JSON.parse(await readFile(path, "utf-8"));
-  } catch {
-    return {};
-  }
-}
-
-async function saveJSON(path, data) {
-  await writeFile(path, JSON.stringify(data, null, 2), "utf-8");
-}
-
 async function getConfig(guildId) {
-  const all = await loadJSON(CONFIG_PATH);
-  return all[guildId] ?? null;
+  return getGuildValue(CONFIG_PATH, guildId, null);
 }
 
 async function setConfig(guildId, partial) {
-  const all = await loadJSON(CONFIG_PATH);
-  all[guildId] = { ...(all[guildId] ?? {}), ...partial };
-  await saveJSON(CONFIG_PATH, all);
-  return all[guildId];
+  return setGuildValue(CONFIG_PATH, guildId, partial);
 }
 
 // State: which members are still pending verification, and when they joined.
 // { [guildId]: { [userId]: joinedAtISOString } }
-async function getPending(guildId) {
-  const all = await loadJSON(STATE_PATH);
-  return all[guildId] ?? {};
-}
-
 async function addPending(guildId, userId, joinedAt) {
-  const all = await loadJSON(STATE_PATH);
-  all[guildId] = { ...(all[guildId] ?? {}), [userId]: joinedAt };
-  await saveJSON(STATE_PATH, all);
+  return updateJSON(STATE_PATH, (all) => {
+    all[guildId] = { ...(all[guildId] ?? {}), [userId]: joinedAt };
+  });
 }
 
 async function removePending(guildId, userId) {
-  const all = await loadJSON(STATE_PATH);
-  if (!all[guildId] || !(userId in all[guildId])) return;
-  delete all[guildId][userId];
-  await saveJSON(STATE_PATH, all);
+  return updateJSON(STATE_PATH, (all) => {
+    if (!all[guildId] || !(userId in all[guildId])) return;
+    delete all[guildId][userId];
+  });
 }
 
 async function sendVerifyLog(guild, config, description) {
@@ -198,8 +172,8 @@ export function registerVerifyHandlers(client) {
   // --- Background check: auto-kick members who never verified ---
   setInterval(async () => {
     try {
-      const allConfigs = await loadJSON(CONFIG_PATH);
-      const allPending = await loadJSON(STATE_PATH);
+      const allConfigs = await readJSON(CONFIG_PATH);
+      const allPending = await readJSON(STATE_PATH);
 
       for (const [guildId, pendingMap] of Object.entries(allPending)) {
         const config = allConfigs[guildId];

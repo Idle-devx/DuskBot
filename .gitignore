@@ -1,19 +1,10 @@
-# Dependencies
 node_modules/
 
-# Secrets
+# Secrets — never commit your real .env, only .env.example
 .env
 
-# Per-server local state (created automatically at runtime, not code)
-modlogs-config.json
-access-config.json
-tickets-config.json
-tickets-state.json
-verify-config.json
-verify-state.json
-
-# Saved code snippets (per-guild user data, not code)
-codigos/
-
-# OS/editor cruft
-.DS_Store
+# Runtime state: per-guild config, ticket/verification/anti-raid state,
+# and saved code snippets. All of it lives under data/ now (see
+# src/lib/constants.js) instead of being scattered next to the source
+# files, specifically so this one line covers all of it.
+/data/

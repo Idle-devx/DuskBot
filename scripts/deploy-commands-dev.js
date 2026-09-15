@@ -3,7 +3,7 @@
 // almost instantly — perfect for testing changes before/instead of waiting
 // up to 1 hour for the global rollout.
 import { REST, Routes } from "discord.js";
-import { allCommands } from "./commands.js";
+import { allCommands } from "../src/commands/definitions.js";
 import "dotenv/config";
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);

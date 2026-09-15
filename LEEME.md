@@ -1,12 +1,19 @@
 # Bot de Discord con IA (Groq)
 
-Bot de Discord que responde al comando `/pregunta` utilizando la API gratuita de Groq (con modelos de código abierto como Llama).
+Bot de Discord que responde al comando `/ask` utilizando la API gratuita de Groq (con modelos de código abierto como Llama), además de moderación, conversión a GIF, publicaciones en foro, sistema de tickets, verificación de miembros, protección anti-raid, y un pequeño sistema de almacenamiento de fragmentos de código.
+
+> Nota: este archivo estaba desactualizado en una versión anterior — mencionaba un comando `/pregunta` que ya no existe. El comando real, registrado en `src/commands/definitions.js`, es `/ask` (en inglés, como el resto de los comandos de barra del bot).
+
+## Estructura del proyecto
+
+Ver la sección "Project structure" en `README.md` para el detalle completo. En resumen: `src/index.js` es el punto de entrada, cada funcionalidad vive en su propio archivo bajo `src/handlers/`, lo compartido entre varias funcionalidades vive en `src/lib/`, los scripts de línea de comandos (deploy, limpieza, verificación) viven en `scripts/`, y todo el estado/configuración que se genera en tiempo de ejecución se guarda bajo `data/` (ignorado por git).
 
 ## Requisitos
 
 - [Node.js](https://nodejs.org), versión 18 o superior.
 - Una aplicación/bot creado en el [Portal de Desarrolladores de Discord](https://discord.com/developers/applications).
 - Una clave de API gratuita de [console.groq.com](https://console.groq.com).
+- Una clave de API gratuita de [developers.giphy.com](https://developers.giphy.com) (para las respuestas automáticas con GIF).
 
 ## Instalación
 
@@ -24,13 +31,20 @@ Bot de Discord que responde al comando `/pregunta` utilizando la API gratuita de
 
    - `DISCORD_TOKEN`: el token de tu bot (Portal de Discord > tu aplicación > Bot > Restablecer token).
    - `DISCORD_CLIENT_ID`: ID de la aplicación (Portal de Discord > tu aplicación > Información general).
-   - `DISCORD_GUILD_ID`: ID de tu servidor (haz clic derecho en el icono de tu servidor > Copiar ID del servidor; requiere tener activado el Modo desarrollador en Discord). Ya no se utiliza para registrar comandos, ya que ahora son globales, pero se conserva por si lo necesitas más adelante.
+   - `DISCORD_GUILD_ID`: ID de tu servidor (clic derecho en el ícono de tu servidor > Copiar ID del servidor; requiere Modo Desarrollador activado). Solo se usa para `deploy:dev` y `clear-guild-commands`, no para correr el bot en sí.
    - `GROQ_API_KEY`: tu clave de API gratuita de Groq.
+   - `GIPHY_API_KEY`: tu clave de API gratuita de GIPHY.
 
-3. Registra los comandos de barra (`/`) globalmente para que funcionen en cualquier servidor al que se una el bot (solo es necesario hacerlo una vez o cuando cambies algún comando. La primera vez puede tardar hasta 1 hora en propagarse):
+3. Registra los comandos de barra (`/`) globalmente para que funcionen en cualquier servidor al que se una el bot (solo es necesario hacerlo una vez o cuando cambies algún comando; la primera vez puede tardar hasta 1 hora en propagarse):
 
    ```bash
    npm run deploy
+   ```
+
+   Para pruebas instantáneas en un solo servidor en vez de esperar la propagación global, usa el ID de tu servidor de pruebas (`DISCORD_GUILD_ID` en `.env`) con:
+
+   ```bash
+   npm run deploy:dev
    ```
 
 4. Inicia el bot:
@@ -44,45 +58,88 @@ Bot de Discord que responde al comando `/pregunta` utilizando la API gratuita de
 En cualquier canal donde esté presente el bot, escribe:
 
 ```text
-/pregunta mensaje: ¿Cuál es la capital de Francia?
+/ask message: ¿Cuál es la capital de Francia?
 ```
 
-El bot responderá utilizando un modelo de IA. Cada canal mantiene su propio historial reciente de conversación (en memoria, por lo que se pierde si el bot se reinicia) para mantener las respuestas contextualizadas.
+El bot responderá utilizando un modelo de IA. Cada persona mantiene su propio historial reciente de conversación por canal (en memoria, se pierde si el bot se reinicia) para mantener las respuestas contextualizadas — las preguntas de una persona nunca se filtran hacia las respuestas de otra, aunque estén en el mismo canal.
 
 ### Convertir un video o una imagen a GIF
 
 ```text
-/gif archivo: [adjunta tu video o imagen] duracion: 5 ancho: 320
+/gif file: [adjunta tu video o imagen] duration: 5 width: 320
 ```
 
-- `archivo` (obligatorio): el video o imagen que quieres convertir.
-- `duracion` (opcional, predeterminado 5): segundos que se tomarán desde el inicio del video (máximo 15).
-- `ancho` (opcional, predeterminado 320): ancho en píxeles del GIF resultante; la altura se ajusta automáticamente.
+- `file` (obligatorio): el video o imagen que quieres convertir.
+- `duration` (opcional, predeterminado 5): segundos que se tomarán desde el inicio del video (máximo 15).
+- `width` (opcional, predeterminado 320): ancho en píxeles del GIF resultante; la altura se ajusta automáticamente.
 
 El bot descarga el archivo, lo convierte utilizando ffmpeg y responde con el GIF. No se aceptan archivos de más de 25 MB.
 
 ### Moderación
 
-- `/ban usuario:[usuario] razon:[opcional] dias_borrado:[0-7, opcional]` — banea permanentemente.
-- `/kick usuario:[usuario] razon:[opcional]` — expulsa al usuario del servidor (puede volver a entrar mediante una invitación).
-- `/softban usuario:[usuario] razon:[opcional] dias_borrado:[opcional, predeterminado 1]` — banea y desbloquea inmediatamente. **Esto ya elimina los mensajes recientes del usuario** (según los días establecidos en `dias_borrado`), ya que técnicamente se le banea durante un instante antes de desbloquearlo; el usuario puede volver a entrar con una nueva invitación.
-- `/mute usuario:[usuario] minutos:[1-40320] razon:[opcional]` — silencia al usuario (mediante el tiempo de espera nativo de Discord) durante el tiempo indicado.
-- `/unmute usuario:[usuario]` — elimina el silencio antes de que expire.
-- `/unban usuario_id:[ID de usuario] razon:[opcional]` — quita el baneo utilizando el ID del usuario (ya que un usuario baneado no puede seleccionarse desde la lista de miembros).
+- `/ban user:[usuario] reason:[opcional] delete_days:[0-7, opcional]` — banea permanentemente.
+- `/kick user:[usuario] reason:[opcional]` — expulsa al usuario del servidor (puede volver a entrar mediante una invitación).
+- `/softban user:[usuario] reason:[opcional] delete_days:[opcional, predeterminado 1]` — banea y desbanea inmediatamente. **Esto ya elimina los mensajes recientes del usuario**, ya que técnicamente se le banea durante un instante antes de desbanearlo; el usuario puede volver a entrar con una nueva invitación.
+- `/mute user:[usuario] minutes:[1-40320] reason:[opcional]` — silencia al usuario (mediante el tiempo de espera nativo de Discord).
+- `/unmute user:[usuario]` — elimina el silencio antes de que expire.
+- `/unban user_id:[ID de usuario] reason:[opcional]` — quita el baneo utilizando el ID del usuario.
 
-Los comandos de ban, kick, softban, mute y unban también intentan enviar un mensaje directo al usuario afectado (con el estilo de una tarjeta embed de Discord, con una barra lateral de color, título y campos) explicando qué ocurrió, el motivo y quién realizó la acción. Si el usuario tiene los mensajes directos cerrados o no comparte un servidor con el bot, el envío falla silenciosamente y la acción de moderación se realiza normalmente. Puedes cambiar los títulos, colores o textos editando el objeto `DM_EMBED_CONFIG` y la función `buildModEmbed` al principio de `index.js`.
+Ban, kick, softban y unban intentan enviar un mensaje directo al usuario afectado explicando qué ocurrió — **el DM se envía solo después de que la acción se realizó con éxito**, así que nunca vas a recibir un DM de "fuiste baneado" por un baneo que en realidad falló (por ejemplo, porque el rol del bot está por debajo del tuyo). Si el usuario tiene los mensajes directos cerrados, esto falla en silencio y la acción de moderación se realiza de todas formas. Puedes cambiar los textos y colores en `src/lib/embeds.js`.
 
-Estos comandos requieren que tu rol y el rol del bot tengan los permisos de moderación correspondientes (Discord los oculta automáticamente a los miembros que no tienen el permiso adecuado). Para que el bot pueda moderar a alguien, su rol debe estar **por encima** del rol de esa persona en la lista de roles del servidor.
+Para que el bot pueda moderar a alguien, su rol debe estar **por encima** del rol de esa persona en la lista de roles del servidor.
 
-Cada acción publica un mensaje visible para todos en el canal, mencionando al usuario afectado y a quien ejecutó el comando (por ejemplo, "@usuario fue enviado a Ban Island por @moderador 🔨"). Puedes cambiar el texto de estas frases editando el objeto `MOD_PHRASES` al principio de `index.js`.
+### Canal de logs de moderación
+
+```
+/modlogs-setup log_channel:[canal]
+```
+
+Comando solo para administradores. Guardado por servidor en `data/modlogs-config.json`.
+
+### Publicaciones en foro
+
+```
+/forum channel: [elige un canal de foro] title: Mi publicación content: Texto aquí image1: [opcional]
+```
+
+### Sistema de tickets
+
+```
+/ticket-setup panel_channel:[canal] category:[opcional] log_channel:[opcional] support_roles:[opcional] alert_hours:[opcional, predeterminado 3] inactivity_hours:[opcional, predeterminado 24]
+```
+
+Publica un panel con botón "Open Ticket". Las categorías se editan en `TICKET_CATEGORIES` dentro de `src/handlers/tickets.js`. El seguimiento de tickets abiertos vive en `data/tickets-state.json`, y solo se borra una vez que el canal fue efectivamente eliminado — así un reinicio del bot a mitad del cierre nunca deja un ticket huérfano sin seguimiento.
+
+### Anti-raid
+
+```
+/antiraid-setup log_channel:[canal] join_threshold:[opcional, predeterminado 5] time_window_seconds:[opcional, predeterminado 10] action:[Kick/Ban, opcional] lockdown_minutes:[opcional, predeterminado 10]
+```
+
+Es una heurística, no una garantía: ajusta `join_threshold` y `time_window_seconds` al tráfico normal de tu servidor. Toda la lógica vive en `src/handlers/antiraid.js`.
+
+### Roles de acceso por servidor
+
+```
+/access-setup moderation_roles:[opcional] save_code_roles:[opcional] code_roles:[opcional] clear_moderation_roles:[opcional] clear_save_code_roles:[opcional] clear_code_roles:[opcional]
+```
+
+Guardado por servidor en `data/access-config.json`.
+
+### Almacenamiento de fragmentos de código
+
+- `/save-code project:[nombre] name:[archivo] file:[opcional] content:[opcional]` — requiere Moderar Miembros/Administrador o un rol configurado. Los archivos adjuntos están limitados a 25 MB.
+- `/code project:[nombre] name:[archivo]` — requiere el rol **"Scripter"** (o un rol configurado, o Admin/Mod).
+
+Archivos guardados bajo `data/codigos/` (ya cubierto por `.gitignore`).
 
 ### Respuestas con GIF aleatorios
 
-Si alguien responde directamente a un mensaje del bot, este responde automáticamente con un GIF aleatorio de una de estas categorías (elegida al azar): tsundere, gatos, perros o focas. Utiliza la API gratuita de GIPHY (100 solicitudes por hora con una clave beta, suficiente para uso personal). No es necesario utilizar ningún comando, ya que es automático. Puedes cambiar las categorías editando el arreglo `GIF_CATEGORIES` al principio de `index.js`.
+Si alguien responde directamente a un mensaje del bot, este responde automáticamente con un GIF aleatorio (tsundere, gatos, perros o focas), usando la API gratuita de GIPHY. Categorías editables en `src/handlers/gifReplies.js`.
 
 ## Notas
 
-- El modelo utilizado es `openai/gpt-oss-20b` (gratuito en el plan para desarrolladores de Groq). Si quieres respuestas de mayor calidad a cambio de un poco más de latencia, puedes cambiarlo en `index.js` a `openai/gpt-oss-120b`. Groq actualiza periódicamente los modelos disponibles de forma gratuita, así que si en el futuro aparece un error `model_not_found`, consulta la lista actual en [console.groq.com/docs/models](https://console.groq.com/docs/models).
-- Discord limita los mensajes a 2000 caracteres; el bot divide automáticamente las respuestas largas en varios mensajes.
-- La conversión de GIF utiliza `ffmpeg-static`, que incluye el ejecutable de ffmpeg, por lo que no necesitas instalar nada adicional en el sistema.
-- Para invitar el bot a otro servidor, genera un nuevo enlace en el portal de Discord (OAuth2 > Generador de URL) con los permisos `bot` y `applications.commands`.
+- El modelo utilizado es `openai/gpt-oss-20b` (gratuito en el plan para desarrolladores de Groq); se puede cambiar en `src/handlers/ask.js`.
+- Discord limita los mensajes a 2000 caracteres; el bot divide automáticamente las respuestas largas.
+- La conversión de GIF utiliza `ffmpeg-static`, que incluye el ejecutable de ffmpeg.
+- `node scripts/check-commands.js` verifica que cada comando definido tenga un handler correspondiente.

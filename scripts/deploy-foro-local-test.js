@@ -5,10 +5,10 @@
 //
 // Requiere que DISCORD_GUILD_ID esté en tu .env con el ID de tu servidor.
 //
-// Uso: node deploy-foro-local-test.js
-// Una vez confirmado que funciona, corre clear-guild-commands.js para
-// borrar este registro local (el comando ya vive globalmente vía
-// deploy-commands.js una vez que hagas push).
+// Uso: node scripts/deploy-foro-local-test.js
+// Una vez confirmado que funciona, corre scripts/clear-guild-commands.js
+// para borrar este registro local (el comando ya vive globalmente vía
+// scripts/deploy-commands.js una vez que hagas push).
 
 import { REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ChannelType } from "discord.js";
 import "dotenv/config";

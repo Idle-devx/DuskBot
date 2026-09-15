@@ -1,18 +1,18 @@
 // Slash command definitions.
 //
 // All commands, including save-code/code, are registered GLOBALLY
-// (deploy-commands.js) and available on every server the bot is on.
+// (scripts/deploy-commands.js) and available on every server the bot is on.
 //
 // save-code/code used to be restricted to a single "home" server because
 // the file storage backing them was one shared folder on disk, not
 // isolated per guild — a mod on any server could've read or overwritten
-// another server's files. That's fixed now: index.js stores each guild's
-// files under its own subfolder (codigos/<guildId>/...), so every server
-// only ever touches its own data.
+// another server's files. That's fixed: src/handlers/codeStorage.js stores
+// each guild's files under its own subfolder (data/codigos/<guildId>/...),
+// so every server only ever touches its own data.
 //
-// Access to moderation commands, save-code/delete-code, and code is now
-// fully controlled in index.js (see canSaveCode/canRetrieveCode/
-// hasModerationAccess), not via .setDefaultMemberPermissions() here. That's
+// Access to moderation commands, save-code/delete-code, and code is fully
+// controlled in src/handlers/*.js (see canSaveCode/canRetrieveCode/
+// hasAccess), not via .setDefaultMemberPermissions() here. That's
 // intentional: it lets each server configure its OWN extra role for each
 // of those (via /access-setup) on top of the usual Discord permissions,
 // instead of being stuck with whatever a fixed permission or a hardcoded
@@ -251,11 +251,6 @@ export const allCommands = [
         .addChannelTypes(ChannelType.GuildText)
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  // save-code/code/delete-code: file storage is isolated per guild in
-  // index.js (codigos/<guildId>/...), so these are safe to register
-  // globally alongside everything else — see the note above. Access is
-  // fully controlled in index.js (Mods/Admins, plus whatever role each
-  // server configures via /access-setup), not by setDefaultMemberPermissions.
   new SlashCommandBuilder()
     .setName("save-code")
     .setDescription("Saves a code file into a project folder")

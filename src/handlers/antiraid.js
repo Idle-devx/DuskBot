@@ -10,42 +10,23 @@
 // false-positive into a lockdown. Tune join_threshold/time_window_seconds
 // to your server's normal traffic.
 import { EmbedBuilder, GuildVerificationLevel } from "discord.js";
-import { readFile, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { DATA_DIR } from "../lib/constants.js";
+import { getGuildValue, setGuildValue } from "../lib/jsonStore.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const CONFIG_PATH = join(__dirname, "antiraid-config.json");
+const CONFIG_PATH = join(DATA_DIR, "antiraid-config.json");
 
 const DEFAULT_JOIN_THRESHOLD = 5;
 const DEFAULT_TIME_WINDOW_SECONDS = 10;
 const DEFAULT_ACTION = "kick";
 const DEFAULT_LOCKDOWN_MINUTES = 10;
 
-async function loadJSON(path) {
-  if (!existsSync(path)) return {};
-  try {
-    return JSON.parse(await readFile(path, "utf-8"));
-  } catch {
-    return {};
-  }
-}
-
-async function saveJSON(path, data) {
-  await writeFile(path, JSON.stringify(data, null, 2), "utf-8");
-}
-
 async function getConfig(guildId) {
-  const all = await loadJSON(CONFIG_PATH);
-  return all[guildId] ?? null;
+  return getGuildValue(CONFIG_PATH, guildId, null);
 }
 
 async function setConfig(guildId, partial) {
-  const all = await loadJSON(CONFIG_PATH);
-  all[guildId] = { ...(all[guildId] ?? {}), ...partial };
-  await saveJSON(CONFIG_PATH, all);
-  return all[guildId];
+  return setGuildValue(CONFIG_PATH, guildId, partial);
 }
 
 // In-memory only (not persisted): recent join timestamps per guild, and

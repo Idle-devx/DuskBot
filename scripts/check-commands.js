@@ -1,11 +1,19 @@
 // Static consistency check — no Discord connection and no npm packages
 // needed (doesn't import discord.js at all, just reads the .js files as
-// plain text). Confirms every top-level command defined in commands.js has
-// a matching handler somewhere in index.js / verify.js / tickets.js.
-// Run with: node check-commands.js
-import { readFileSync, existsSync } from "node:fs";
+// plain text). Confirms every top-level command defined in
+// src/commands/definitions.js has a matching handler somewhere under
+// src/handlers/.
+// Run with: node scripts/check-commands.js
+import { readFileSync, readdirSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const commandsSource = readFileSync("./commands.js", "utf-8");
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT_DIR = join(__dirname, "..");
+const DEFINITIONS_PATH = join(ROOT_DIR, "src", "commands", "definitions.js");
+const HANDLERS_DIR = join(ROOT_DIR, "src", "handlers");
+
+const commandsSource = readFileSync(DEFINITIONS_PATH, "utf-8");
 
 // Only grabs .setName("x") calls that immediately follow
 // "new SlashCommandBuilder()", so option names (which also use .setName)
@@ -16,13 +24,16 @@ for (const block of commandsSource.split("new SlashCommandBuilder()").slice(1)) 
   if (match) commandNames.push(match[1]);
 }
 
-console.log(`commands.js defines ${commandNames.length} top-level command(s):\n`);
+console.log(`definitions.js defines ${commandNames.length} top-level command(s):\n`);
 commandNames.forEach((name) => console.log(`  /${name}`));
 
-const filesToScan = ["index.js", "verify.js", "tickets.js"].filter(existsSync);
-const combinedSource = filesToScan.map((f) => readFileSync(f, "utf-8")).join("\n");
+const handlerFiles = readdirSync(HANDLERS_DIR)
+  .filter((f) => f.endsWith(".js"))
+  .map((f) => join(HANDLERS_DIR, f));
 
-console.log(`\nScanning for handlers in: ${filesToScan.join(", ")}\n`);
+const combinedSource = handlerFiles.map((f) => readFileSync(f, "utf-8")).join("\n");
+
+console.log(`\nScanning for handlers in: ${handlerFiles.map((f) => "src/handlers/" + f.split("/").pop()).join(", ")}\n`);
 
 let allGood = true;
 for (const name of commandNames) {
@@ -38,14 +49,10 @@ for (const name of commandNames) {
   if (!found) allGood = false;
 }
 
-if (!filesToScan.includes("tickets.js")) {
-  console.log(
-    "\nNote: tickets.js wasn't found next to this script, so /ticket-setup couldn't be checked here — verify it separately."
-  );
-}
-
 console.log(
   allGood
-    ? "\n✅ Every command in commands.js has a matching handler."
+    ? "\n✅ Every command in definitions.js has a matching handler."
     : "\n❌ Some commands have no handler — they'll show up in Discord but fail when used."
 );
+
+if (!allGood) process.exitCode = 1;

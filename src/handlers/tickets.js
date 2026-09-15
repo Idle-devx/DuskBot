@@ -13,15 +13,14 @@ import {
   ChannelType,
   PermissionFlagsBits,
 } from "discord.js";
-import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { DATA_DIR } from "../lib/constants.js";
+import { getGuildValue, setGuildValue, updateJSON } from "../lib/jsonStore.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const CONFIG_PATH = join(__dirname, "tickets-config.json");
-const STATE_PATH = join(__dirname, "tickets-state.json");
+const CONFIG_PATH = join(DATA_DIR, "tickets-config.json");
+const STATE_PATH = join(DATA_DIR, "tickets-state.json");
 
 // How often the background checker runs (milliseconds).
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
@@ -39,50 +38,31 @@ const TICKET_CATEGORIES = [
   { label: "Other", value: "other", emoji: "❓", description: "Anything else" },
 ];
 
-// --- Per-guild config (panel/category/log channel, support role, timers) ---
-// Stored as simple JSON on disk, set via the /ticket-setup command.
-
-async function loadJSON(path) {
-  if (!existsSync(path)) return {};
-  try {
-    return JSON.parse(await readFile(path, "utf-8"));
-  } catch {
-    return {};
-  }
-}
-
-async function saveJSON(path, data) {
-  await writeFile(path, JSON.stringify(data, null, 2), "utf-8");
-}
-
 async function getGuildConfig(guildId) {
-  const config = await loadJSON(CONFIG_PATH);
-  return config[guildId] ?? null;
+  return getGuildValue(CONFIG_PATH, guildId, null);
 }
 
 async function setGuildConfig(guildId, partial) {
-  const config = await loadJSON(CONFIG_PATH);
-  config[guildId] = { ...(config[guildId] ?? {}), ...partial };
-  await saveJSON(CONFIG_PATH, config);
-  return config[guildId];
+  return setGuildValue(CONFIG_PATH, guildId, partial);
 }
 
 // --- Per-ticket state (open tickets being tracked for alerts/auto-close) ---
 
 async function getState() {
-  return loadJSON(STATE_PATH);
+  return updateJSON(STATE_PATH, (data) => structuredClone(data));
 }
 
 async function setTicketState(channelId, partial) {
-  const state = await getState();
-  state[channelId] = { ...(state[channelId] ?? {}), ...partial };
-  await saveJSON(STATE_PATH, state);
+  return updateJSON(STATE_PATH, (state) => {
+    state[channelId] = { ...(state[channelId] ?? {}), ...partial };
+    return state[channelId];
+  });
 }
 
 async function removeTicketState(channelId) {
-  const state = await getState();
-  delete state[channelId];
-  await saveJSON(STATE_PATH, state);
+  return updateJSON(STATE_PATH, (state) => {
+    delete state[channelId];
+  });
 }
 
 // Extracts every role ID mentioned in a string like "@Staff @Helper" (as
@@ -195,6 +175,14 @@ async function buildTranscript(channel) {
 
 // Shared close logic used by both the "Close Ticket" button and the
 // auto-close-on-inactivity background check.
+//
+// IMPORTANT: tracking state is only cleared AFTER the channel is actually
+// deleted. An earlier version cleared it first and used a fire-and-forget
+// setTimeout to delete the channel a few seconds later — if the bot
+// restarted in that window, the channel survived but nothing was tracking
+// it anymore, so it never got cleaned up. Now, if the bot restarts during
+// the delay, the ticket is still in tickets-state.json and can simply be
+// closed again.
 async function closeTicketChannel(channel, closedByText) {
   try {
     const guildConfig = await getGuildConfig(channel.guild.id);
@@ -226,11 +214,15 @@ async function closeTicketChannel(channel, closedByText) {
     console.error("Error generating transcript:", error);
   }
 
-  await removeTicketState(channel.id);
+  await new Promise((resolve) => setTimeout(resolve, 5000));
 
-  setTimeout(() => {
-    channel.delete().catch((error) => console.error("Error deleting ticket channel:", error));
-  }, 5000);
+  try {
+    await channel.delete();
+  } catch (error) {
+    console.error("Error deleting ticket channel:", error);
+  }
+
+  await removeTicketState(channel.id);
 }
 
 // Background job: checks every ticket being tracked and sends the inactivity

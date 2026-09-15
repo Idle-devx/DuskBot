@@ -3,7 +3,7 @@
 // Útil para limpiar duplicados cuando un comando quedó registrado tanto
 // global como localmente.
 //
-// Uso: node clear-guild-commands.js
+// Uso: node scripts/clear-guild-commands.js
 
 import { REST, Routes } from "discord.js";
 import "dotenv/config";

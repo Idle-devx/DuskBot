@@ -3,11 +3,13 @@
   "version": "1.0.0",
   "description": "Bot de Discord integrado con la API de Claude (Anthropic)",
   "type": "module",
-  "main": "index.js",
+  "main": "src/index.js",
   "scripts": {
-    "deploy": "node deploy-commands.js",
-    "deploy:dev": "node deploy-commands-dev.js",
-    "start": "node index.js"
+    "start": "node src/index.js",
+    "deploy": "node scripts/deploy-commands.js",
+    "deploy:dev": "node scripts/deploy-commands-dev.js",
+    "check-commands": "node scripts/check-commands.js",
+    "clear-guild-commands": "node scripts/clear-guild-commands.js"
   },
   "dependencies": {
     "discord.js": "^14.16.3",
