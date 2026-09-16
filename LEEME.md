@@ -126,6 +126,34 @@ Es una heurística, no una garantía: ajusta `join_threshold` y `time_window_sec
 
 Guardado por servidor en `data/access-config.json`.
 
+### Auto-rol mediante reacciones
+
+```
+/reactionrole-setup channel:[canal] title:[opcional] description:[opcional] color:[opcional, hex ej. #5865F2]
+```
+
+Comando solo para administradores. Publica una embed en `channel` con el ícono del servidor como miniatura y un texto (`description`, con un valor por defecto) explicando que reaccionar otorga un rol. Empieza sin roles asignados — se agregan con:
+
+```
+/reactionrole-add message_id:[ID del mensaje del panel] role:[rol a otorgar] emoji:[emoji con el que reaccionar]
+```
+
+`message_id` es el ID del mensaje del panel (clic derecho sobre el mensaje con el Modo Desarrollador activado > Copiar ID). El bot reacciona al panel con ese emoji y edita la embed para mostrar `emoji — @Rol`; desde ese momento, reaccionar con ese emoji otorga el rol, y quitar la reacción lo retira de nuevo. Ejecuta `/reactionrole-add` otra vez con el mismo `message_id` y otro `role`/`emoji` para agregar otra combinación al mismo panel — un panel puede tener varias. El rol del bot debe estar por encima del rol a otorgar (igual que en moderación), no puede ser `@everyone` ni un rol gestionado por una integración/bot.
+
+```
+/reactionrole-remove message_id:[ID del mensaje del panel] emoji:[emoji a quitar]
+```
+
+Elimina esa combinación, actualiza la embed y quita la reacción propia del bot para ese emoji. Si el mensaje del panel se borra manualmente, su configuración se limpia automáticamente. Toda esta lógica vive en `src/handlers/reactionRoles.js`, guardada por servidor en `data/reactionroles-config.json`.
+
+### Canales de voz automáticos (join-to-create)
+
+```
+/voicecreate-setup trigger_channel:[canal de voz] category:[opcional] name_template:[opcional, por defecto '🔊 {user}'] user_limit:[opcional, por defecto 0 = sin límite] log_channel:[opcional]
+```
+
+Comando solo para administradores. Cada vez que alguien se une a `trigger_channel`, el bot crea un canal de voz nuevo (con el nombre generado a partir de `name_template`, que debe incluir `{user}`) dentro de `category` (por defecto, la misma categoría del canal disparador) y mueve ahí al usuario automáticamente. El canal se elimina solo en cuanto queda vacío — no hay que limpiar nada manualmente, y una revisión al iniciar el bot elimina cualquier canal que haya quedado vacío mientras estaba apagado. Ejecuta `/voicecreate-setup disable:true` para desactivarlo — unirse al antiguo canal disparador ya no crea nada nuevo, aunque los canales personales que sigan abiertos en ese momento igual se borran solos al vaciarse. Guardado por servidor en `data/voicecreate-config.json`; qué canales creó el bot se rastrea en `data/voicecreate-state.json`. Toda esta lógica vive en `src/handlers/voiceCreate.js`.
+
 ### Almacenamiento de fragmentos de código
 
 - `/save-code project:[nombre] name:[archivo] file:[opcional] content:[opcional]` — requiere Moderar Miembros/Administrador o un rol configurado. Los archivos adjuntos están limitados a 25 MB.

@@ -19,7 +19,9 @@ discord-bot/
 │   │   ├── codeStorage.js    # /save-code /delete-code /code
 │   │   ├── tickets.js        # /ticket-setup, /close, ticket panel + auto-close
 │   │   ├── verify.js         # /verify-setup, auto-kick unverified members
-│   │   └── antiraid.js       # /antiraid-setup, mass-join lockdown
+│   │   ├── antiraid.js       # /antiraid-setup, mass-join lockdown
+│   │   ├── reactionRoles.js  # /reactionrole-setup, /reactionrole-add, /reactionrole-remove
+│   │   └── voiceCreate.js    # /voicecreate-setup, join-to-create voice channels
 │   └── lib/                  # Shared code used by more than one handler
 │       ├── constants.js      # DATA_DIR, MAX_INPUT_SIZE
 │       ├── jsonStore.js      # Locked read-modify-write helper for the JSON config/state files
@@ -196,6 +198,34 @@ Admin-only command. Moderation commands, `/save-code`/`/delete-code`, and `/code
 Each of these accepts **multiple roles** — just @mention all of them in the same option (e.g. `@Mod @Trusted`). Use the matching `clear_*` boolean to remove a configured set of roles and fall back to the defaults above. Saved per-server in `data/access-config.json`.
 
 **Every configuration in this bot — tickets, verification, moderation logs, anti-raid, access roles, and code storage — is stored per-server (keyed by the server's ID), under `data/`.** Running the bot on multiple servers never mixes their settings or data together.
+
+### Reaction roles
+
+```
+/reactionrole-setup channel:[channel] title:[optional] description:[optional] color:[optional hex, e.g. #5865F2]
+```
+
+Admin-only command that posts a panel embed in `channel`, with the server's icon as a thumbnail and `description` (default text provided) explaining that reacting grants a role. It starts with no roles mapped — add them with:
+
+```
+/reactionrole-add message_id:[panel message ID] role:[role to grant] emoji:[emoji to react with]
+```
+
+`message_id` is the panel message's ID (right-click it in Discord with Developer Mode on > Copy Message ID). The bot reacts to the panel with that emoji and edits the embed to list `emoji — @Role`; from then on, reacting with that emoji grants the role, and removing the reaction removes it again. Run `/reactionrole-add` again with the same `message_id` and a new `role`/`emoji` to add another mapping to the same panel — one panel can have several. The role must sit below the bot's own highest role (same requirement as moderation), can't be `@everyone`, and can't be a bot/integration-managed role.
+
+```
+/reactionrole-remove message_id:[panel message ID] emoji:[emoji to unmap]
+```
+
+Removes that emoji's mapping, updates the embed, and removes the bot's own reaction for that emoji. If a panel message is deleted manually, its configuration is cleaned up automatically the next time the bot notices. All of this logic lives in `src/handlers/reactionRoles.js`, saved per-server in `data/reactionroles-config.json`.
+
+### Join-to-create voice channels
+
+```
+/voicecreate-setup trigger_channel:[voice channel] category:[optional] name_template:[optional, default '🔊 {user}'] user_limit:[optional, default 0 = unlimited] log_channel:[optional]
+```
+
+Admin-only command. Whenever someone joins `trigger_channel`, the bot creates a brand-new voice channel (named from `name_template`, which must contain `{user}`) under `category` (defaults to the trigger channel's own category) and moves them straight into it. The channel is deleted automatically the moment everyone leaves it — nothing to clean up manually, and a background sweep on startup catches any channel that was left empty while the bot was offline. Run `/voicecreate-setup disable:true` to turn the feature off — joining the old trigger channel no longer creates anything new, though any personal channels still open at that point still get deleted automatically once they empty out. Saved per-server in `data/voicecreate-config.json`; which channels the bot created is tracked in `data/voicecreate-state.json`. All of this logic lives in `src/handlers/voiceCreate.js`.
 
 ### Code snippet storage
 

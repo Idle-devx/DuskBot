@@ -378,4 +378,99 @@ export const allCommands = [
         .setMaxValue(1440)
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName("voicecreate-setup")
+    .setDescription("Sets up (or disables) join-to-create personal voice channels")
+    .addChannelOption((option) =>
+      option
+        .setName("trigger_channel")
+        .setDescription("Voice channel that, when joined, creates a new personal voice channel")
+        .addChannelTypes(ChannelType.GuildVoice)
+    )
+    .addChannelOption((option) =>
+      option
+        .setName("category")
+        .setDescription("Category where new channels are created (default: same as the trigger channel)")
+        .addChannelTypes(ChannelType.GuildCategory)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("name_template")
+        .setDescription("Name for new channels, must include {user} (default: '🔊 {user}')")
+        .setMaxLength(100)
+    )
+    .addIntegerOption((option) =>
+      option
+        .setName("user_limit")
+        .setDescription("Max users per created channel (default: 0 = unlimited)")
+        .setMinValue(0)
+        .setMaxValue(99)
+    )
+    .addChannelOption((option) =>
+      option
+        .setName("log_channel")
+        .setDescription("Channel where channel creation/deletion is logged")
+        .addChannelTypes(ChannelType.GuildText)
+    )
+    .addBooleanOption((option) =>
+      option.setName("disable").setDescription("Disable join-to-create voice channels for this server")
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName("reactionrole-setup")
+    .setDescription("Posts a new reaction-role panel embed")
+    .addChannelOption((option) =>
+      option
+        .setName("channel")
+        .setDescription("Channel where the panel will be posted")
+        .addChannelTypes(ChannelType.GuildText)
+        .setRequired(true)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("title")
+        .setDescription("Embed title (default: '🎭 Reaction Roles')")
+        .setMaxLength(256)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("description")
+        .setDescription("Intro text shown above the role list (default text provided)")
+        .setMaxLength(1000)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("color")
+        .setDescription("Hex color for the embed, e.g. #5865F2 (default: Discord blurple)")
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName("reactionrole-add")
+    .setDescription("Adds (or updates) a role/emoji pair on an existing reaction-role panel")
+    .addStringOption((option) =>
+      option
+        .setName("message_id")
+        .setDescription("ID of the panel message (right-click it > Copy Message ID)")
+        .setRequired(true)
+    )
+    .addRoleOption((option) =>
+      option.setName("role").setDescription("Role to grant when someone reacts with the emoji").setRequired(true)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("emoji")
+        .setDescription("Emoji to react with (a default emoji, or a custom one from a server I'm in)")
+        .setRequired(true)
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName("reactionrole-remove")
+    .setDescription("Removes a role/emoji pair from an existing reaction-role panel")
+    .addStringOption((option) =>
+      option.setName("message_id").setDescription("ID of the panel message").setRequired(true)
+    )
+    .addStringOption((option) =>
+      option.setName("emoji").setDescription("Emoji whose mapping should be removed").setRequired(true)
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 ].map((command) => command.toJSON());
