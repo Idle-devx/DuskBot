@@ -10,9 +10,10 @@
 // each guild's files under its own subfolder (data/codigos/<guildId>/...),
 // so every server only ever touches its own data.
 //
-// Access to moderation commands, save-code/delete-code, and code is fully
-// controlled in src/handlers/*.js (see canSaveCode/canRetrieveCode/
-// hasAccess), not via .setDefaultMemberPermissions() here. That's
+// Access to moderation commands (including warn/warnings/clearwarnings and
+// purge), save-code/delete-code, and code is fully controlled in
+// src/handlers/*.js (see hasModerationAccess/canSaveCode/canRetrieveCode),
+// not via .setDefaultMemberPermissions() here. That's
 // intentional: it lets each server configure its OWN extra role for each
 // of those (via /access-setup) on top of the usual Discord permissions,
 // instead of being stuck with whatever a fixed permission or a hardcoded
@@ -25,7 +26,7 @@ import { SlashCommandBuilder, PermissionFlagsBits, ChannelType } from "discord.j
 export const allCommands = [
   new SlashCommandBuilder()
     .setName("ask")
-    .setDescription("Ask the AI a question")
+    .setDescription("Asks the AI a question")
     .addStringOption((option) =>
       option
         .setName("message")
@@ -34,7 +35,7 @@ export const allCommands = [
     ),
   new SlashCommandBuilder()
     .setName("gif")
-    .setDescription("Convert an attached video or image to GIF")
+    .setDescription("Converts an attached video or image into a GIF")
     .addAttachmentOption((option) =>
       option
         .setName("file")
@@ -132,6 +133,41 @@ export const allCommands = [
       option.setName("reason").setDescription("Reason for the unban")
     ),
   new SlashCommandBuilder()
+    .setName("warn")
+    .setDescription("Issues a warning to a user, logged to their warning history")
+    .addUserOption((option) =>
+      option.setName("user").setDescription("User to warn").setRequired(true)
+    )
+    .addStringOption((option) =>
+      option.setName("reason").setDescription("Reason for the warning")
+    ),
+  new SlashCommandBuilder()
+    .setName("warnings")
+    .setDescription("Lists a user's warning history")
+    .addUserOption((option) =>
+      option.setName("user").setDescription("User to check").setRequired(true)
+    ),
+  new SlashCommandBuilder()
+    .setName("clearwarnings")
+    .setDescription("Clears every warning on a user's record")
+    .addUserOption((option) =>
+      option.setName("user").setDescription("User whose warnings will be cleared").setRequired(true)
+    ),
+  new SlashCommandBuilder()
+    .setName("purge")
+    .setDescription("Bulk-deletes recent messages in this channel")
+    .addIntegerOption((option) =>
+      option
+        .setName("amount")
+        .setDescription("How many messages to delete (1-100)")
+        .setMinValue(1)
+        .setMaxValue(100)
+        .setRequired(true)
+    )
+    .addUserOption((option) =>
+      option.setName("user").setDescription("Only delete messages from this user (searches the last 100 messages)")
+    ),
+  new SlashCommandBuilder()
     .setName("forum")
     .setDescription("Creates a post in a forum channel")
     .addChannelOption((option) =>
@@ -212,7 +248,7 @@ export const allCommands = [
     .setDescription("Closes the current ticket (must be used inside a ticket channel)"),
   new SlashCommandBuilder()
     .setName("modlogs-setup")
-    .setDescription("Sets the channel where ban/kick/mute/unban logs are sent")
+    .setDescription("Sets the channel where moderation action logs (ban/kick/softban/mute/unmute/unban/warn) are sent")
     .addChannelOption((option) =>
       option
         .setName("log_channel")
@@ -473,4 +509,19 @@ export const allCommands = [
       option.setName("emoji").setDescription("Emoji whose mapping should be removed").setRequired(true)
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName("userinfo")
+    .setDescription("Shows information about a server member")
+    .addUserOption((option) =>
+      option.setName("user").setDescription("User to look up (default: yourself)")
+    ),
+  new SlashCommandBuilder()
+    .setName("serverinfo")
+    .setDescription("Shows information about this server"),
+  new SlashCommandBuilder()
+    .setName("avatar")
+    .setDescription("Shows a user's avatar in full size")
+    .addUserOption((option) =>
+      option.setName("user").setDescription("User to look up (default: yourself)")
+    ),
 ].map((command) => command.toJSON());

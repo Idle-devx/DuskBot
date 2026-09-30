@@ -1,6 +1,6 @@
 # Bot de Discord con IA (Groq)
 
-Bot de Discord que responde al comando `/ask` utilizando la API gratuita de Groq (con modelos de código abierto como Llama), además de moderación, conversión a GIF, publicaciones en foro, sistema de tickets, verificación de miembros, protección anti-raid, y un pequeño sistema de almacenamiento de fragmentos de código.
+Bot de Discord que responde al comando `/ask` utilizando la API gratuita de Groq (con modelos de código abierto como Llama), además de moderación (incluyendo advertencias y borrado masivo de mensajes), conversión a GIF, publicaciones en foro, sistema de tickets, verificación de miembros, protección anti-raid, roles por reacción, canales de voz automáticos, comandos de información de usuario/servidor, y un pequeño sistema de almacenamiento de fragmentos de código.
 
 > Nota: este archivo estaba desactualizado en una versión anterior — mencionaba un comando `/pregunta` que ya no existe. El comando real, registrado en `src/commands/definitions.js`, es `/ask` (en inglés, como el resto de los comandos de barra del bot).
 
@@ -83,10 +83,12 @@ El bot descarga el archivo, lo convierte utilizando ffmpeg y responde con el GIF
 - `/mute user:[usuario] minutes:[1-40320] reason:[opcional]` — silencia al usuario (mediante el tiempo de espera nativo de Discord).
 - `/unmute user:[usuario]` — elimina el silencio antes de que expire.
 - `/unban user_id:[ID de usuario] reason:[opcional]` — quita el baneo utilizando el ID del usuario.
+- `/warn user:[usuario] reason:[opcional]` — registra una advertencia; no aplica ninguna otra sanción por sí sola. Ver [Advertencias](#advertencias) más abajo.
+- `/purge amount:[1-100] user:[opcional]` — borra en bloque mensajes recientes del canal actual. Ver [Borrado masivo de mensajes](#borrado-masivo-de-mensajes) más abajo.
 
-Ban, kick, softban y unban intentan enviar un mensaje directo al usuario afectado explicando qué ocurrió — **el DM se envía solo después de que la acción se realizó con éxito**, así que nunca vas a recibir un DM de "fuiste baneado" por un baneo que en realidad falló (por ejemplo, porque el rol del bot está por debajo del tuyo). Si el usuario tiene los mensajes directos cerrados, esto falla en silencio y la acción de moderación se realiza de todas formas. Puedes cambiar los textos y colores en `src/lib/embeds.js`.
+Ban, kick, softban, unban y warn intentan enviar un mensaje directo al usuario afectado explicando qué ocurrió — **el DM se envía solo después de que la acción se realizó con éxito**, así que nunca vas a recibir un DM de "fuiste baneado" por un baneo que en realidad falló (por ejemplo, porque el rol del bot está por debajo del tuyo). Si el usuario tiene los mensajes directos cerrados, esto falla en silencio y la acción de moderación se realiza de todas formas. Puedes cambiar los textos y colores en `src/lib/embeds.js`.
 
-Para que el bot pueda moderar a alguien, su rol debe estar **por encima** del rol de esa persona en la lista de roles del servidor.
+Ninguno de estos comandos usa la restricción nativa de permisos de Discord — son visibles para todos en la lista de comandos, pero el acceso se controla en código (`hasModerationAccess` en `src/lib/accessConfig.js`) según el permiso nativo correspondiente, Administrador, o un rol configurado con [`/access-setup`](#roles-de-acceso-por-servidor). Para que el bot pueda moderar a alguien, su rol debe estar además **por encima** del rol de esa persona en la lista de roles del servidor.
 
 ### Canal de logs de moderación
 
@@ -94,7 +96,31 @@ Para que el bot pueda moderar a alguien, su rol debe estar **por encima** del ro
 /modlogs-setup log_channel:[canal]
 ```
 
-Comando solo para administradores. Guardado por servidor en `data/modlogs-config.json`.
+Comando solo para administradores. Registra ban, kick, softban, mute, unmute, unban y warn en un canal dedicado. Guardado por servidor en `data/modlogs-config.json`. Esta lógica es compartida entre `src/handlers/moderation.js` y `src/handlers/warnings.js` mediante `src/lib/modLog.js`.
+
+### Advertencias
+
+- `/warn user:[usuario] reason:[opcional]` — registra una advertencia, envía un DM, publica una embed en el canal y la registra en el canal de logs (si hay uno configurado).
+- `/warnings user:[usuario]` — lista el historial de advertencias de un usuario (respuesta efímera, solo para staff).
+- `/clearwarnings user:[usuario]` — borra todo el historial de advertencias de un usuario (respuesta efímera, solo para staff). No se puede borrar una advertencia individual del medio de la lista.
+
+Guardado por servidor y por usuario en `data/warnings.json`. Toda esta lógica vive en `src/handlers/warnings.js`.
+
+### Borrado masivo de mensajes
+
+```
+/purge amount:[1-100] user:[opcional]
+```
+
+Borra la cantidad indicada de mensajes recientes del canal. Con `user`, solo borra mensajes de esa persona, buscando entre los últimos 100 mensajes del canal (límite de la API de Discord para el borrado masivo) — por lo que con ese filtro puede borrar menos de `amount` si la persona no escribió tantas veces recientemente. Los mensajes de más de 14 días se omiten automáticamente (otro límite de Discord). Requiere Gestionar Mensajes, Administrador, o un rol configurado en `moderation_roles`. Vive en `src/handlers/moderation.js`.
+
+### Información de usuario y servidor
+
+- `/userinfo user:[opcional, por defecto vos mismo]` — muestra tag, ID, avatar, fecha de creación de la cuenta, fecha de ingreso al servidor y roles.
+- `/serverinfo` — muestra el dueño del servidor, cantidad de miembros/roles/canales, nivel de boost y fecha de creación.
+- `/avatar user:[opcional, por defecto vos mismo]` — publica el avatar de un usuario en tamaño completo.
+
+No requieren ningún permiso especial. Toda esta lógica vive en `src/handlers/info.js`.
 
 ### Publicaciones en foro
 

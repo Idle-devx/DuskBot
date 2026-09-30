@@ -12,6 +12,8 @@ import { registerVerifyHandlers } from "./handlers/verify.js";
 import { registerAntiRaidHandlers } from "./handlers/antiraid.js";
 import { registerReactionRoleHandlers } from "./handlers/reactionRoles.js";
 import { registerVoiceCreateHandlers } from "./handlers/voiceCreate.js";
+import { registerWarningHandlers } from "./handlers/warnings.js";
+import { registerInfoHandlers } from "./handlers/info.js";
 
 const client = new Client({
   // GuildMembers is required for the verification system (handlers/verify.js)
@@ -43,13 +45,13 @@ const client = new Client({
 // Every feature module registers its own "interactionCreate" (and, for a
 // few, "messageCreate"/"guildMemberAdd"/etc.) listener by design — that's
 // what keeps each feature self-contained in its own file instead of one
-// giant dispatcher. With 11 handler modules that adds up to more than
+// giant dispatcher. With 13 handler modules that adds up to more than
 // Node's default limit of 10 listeners per event, which logs a
 // MaxListenersExceededWarning even though nothing is actually leaking
 // (these are permanent listeners added once at startup, never repeatedly).
 // Raise the limit instead of silencing the warning outright, so a real
 // leak introduced later would still get flagged.
-client.setMaxListeners(20);
+client.setMaxListeners(30);
 
 registerAskHandler(client);
 registerGifHandler(client);
@@ -62,6 +64,8 @@ registerVerifyHandlers(client);
 registerAntiRaidHandlers(client);
 registerReactionRoleHandlers(client);
 registerVoiceCreateHandlers(client);
+registerWarningHandlers(client);
+registerInfoHandlers(client);
 
 client.once("ready", () => {
   console.log(`Bot logged in as ${client.user.tag}`);
