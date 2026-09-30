@@ -1,6 +1,6 @@
 # Discord Bot with AI (Groq)
 
-Discord bot that responds to the `/ask` command using Groq's free API (open-source models like Llama), plus moderation, GIF conversion, forum posting, tickets, member verification, anti-raid protection, and a small code snippet storage system.
+Discord bot that responds to the `/ask` command using Groq's free API (open-source models like Llama), plus moderation (including warnings and bulk-delete), GIF conversion, forum posting, tickets, member verification, anti-raid protection, reaction roles, join-to-create voice channels, member/server lookup commands, and a small code snippet storage system.
 
 ## Project structure
 
@@ -15,7 +15,9 @@ discord-bot/
 │   │   ├── gif.js            # /gif (video/image -> GIF conversion)
 │   │   ├── gifReplies.js     # Automatic GIF replies (GIPHY)
 │   │   ├── forum.js          # /forum
-│   │   ├── moderation.js     # /ban /kick /softban /mute /unmute /unban, /modlogs-setup, /access-setup
+│   │   ├── moderation.js     # /ban /kick /softban /mute /unmute /unban /purge, /modlogs-setup, /access-setup
+│   │   ├── warnings.js       # /warn /warnings /clearwarnings
+│   │   ├── info.js           # /userinfo /serverinfo /avatar
 │   │   ├── codeStorage.js    # /save-code /delete-code /code
 │   │   ├── tickets.js        # /ticket-setup, /close, ticket panel + auto-close
 │   │   ├── verify.js         # /verify-setup, auto-kick unverified members
@@ -25,7 +27,8 @@ discord-bot/
 │   └── lib/                  # Shared code used by more than one handler
 │       ├── constants.js      # DATA_DIR, MAX_INPUT_SIZE
 │       ├── jsonStore.js      # Locked read-modify-write helper for the JSON config/state files
-│       ├── accessConfig.js   # Per-guild access-config.json (shared by moderation.js and codeStorage.js)
+│       ├── accessConfig.js   # Per-guild access-config.json + hasModerationAccess() (shared by moderation.js, warnings.js, and codeStorage.js)
+│       ├── modLog.js         # Shared /modlogs-setup channel sender (used by moderation.js and warnings.js)
 │       └── embeds.js         # DM/channel/log embed builders for moderation actions
 ├── scripts/                  # One-off scripts you run from the command line, not loaded by the bot itself
 │   ├── deploy-commands.js
@@ -119,10 +122,12 @@ The bot downloads the file, converts it with ffmpeg, and replies with the GIF. F
 - `/mute user:[user] minutes:[1-40320] reason:[optional]` — mutes (Discord's native timeout) for the given time.
 - `/unmute user:[user]` — removes the mute before it expires.
 - `/unban user_id:[user ID] reason:[optional]` — unbans using the user's ID (since a banned user can't be selected from the member list).
+- `/warn user:[user] reason:[optional]` — issues a warning; doesn't take any other action on its own, just builds a record you can point to before escalating. See [Warnings](#warnings) below.
+- `/purge amount:[1-100] user:[optional]` — bulk-deletes recent messages in the current channel. See [Bulk-deleting messages](#bulk-deleting-messages) below.
 
-Ban, kick, softban, and unban try to send the affected user a direct message (styled as a Discord embed card) explaining what happened, the reason, and who took the action — **sent only after the action itself has succeeded**, so you never get a "you were banned" DM for a ban that actually failed (e.g. because the bot's role sits below yours). If the user has DMs closed or doesn't share a server with the bot, this silently fails and the moderation action still goes through normally. You can change the titles, colors, or wording in `src/lib/embeds.js`.
+Ban, kick, softban, unban, and warn try to send the affected user a direct message (styled as a Discord embed card) explaining what happened, the reason, and who took the action — **sent only after the action itself has succeeded**, so you never get a "you were banned" DM for a ban that actually failed (e.g. because the bot's role sits below yours). If the user has DMs closed or doesn't share a server with the bot, this silently fails and the moderation action still goes through normally. You can change the titles, colors, or wording in `src/lib/embeds.js`.
 
-These commands require your role and the Bot's role to have the corresponding moderation permissions (Discord automatically hides them from members without the right permission). For the Bot to be able to moderate someone, its role must be **above** that person's role in the server's role list.
+None of these commands use Discord's native "hide from members without permission" setting — they're visible to everyone in the command list, but blocked in code (`src/lib/accessConfig.js`'s `hasModerationAccess`) unless you have the matching native Discord permission (Ban Members, Kick Members, or Moderate Members, depending on the command), Administrator, or a role configured via [`/access-setup`](#per-server-access-roles). For the Bot to actually be able to ban/kick/mute someone, its own role must additionally be **above** that person's role in the server's role list.
 
 Each action also posts an embed card visible to everyone in the channel, mentioning the affected user and whoever ran the command.
 
@@ -132,7 +137,31 @@ Each action also posts an embed card visible to everyone in the channel, mention
 /modlogs-setup log_channel:[channel]
 ```
 
-Admin-only command that sets a dedicated channel where every ban, kick, softban, mute, unmute, and unban gets logged as its own styled embed (title like "User Banned", with User, User ID, Staff, and Reason fields — plus Duration for mutes). This is separate from the in-channel confirmation message and from the DM sent to the affected user; it's meant as a permanent audit log for staff. Saved per-server in `data/modlogs-config.json`. Run the command again anytime to change the channel.
+Admin-only command that sets a dedicated channel where every ban, kick, softban, mute, unmute, unban, and warn gets logged as its own styled embed (title like "User Banned", with User, User ID, Staff, and Reason fields — plus Duration for mutes or Warning # for warns). This is separate from the in-channel confirmation message and from the DM sent to the affected user; it's meant as a permanent audit log for staff. Saved per-server in `data/modlogs-config.json`. Run the command again anytime to change the channel. This logic is shared between `src/handlers/moderation.js` and `src/handlers/warnings.js` through `src/lib/modLog.js`.
+
+### Warnings
+
+- `/warn user:[user] reason:[optional]` — records a warning against the user, DMs them, posts a channel embed, and logs it to the mod-log channel if one is configured. Uses the same access rule as the rest of moderation (see above).
+- `/warnings user:[user]` — lists everyone's warning history for that user (ephemeral, staff-only): each entry shows the reason, who issued it, and when.
+- `/clearwarnings user:[user]` — wipes a user's entire warning record (ephemeral, staff-only). There's no way to remove a single warning from the middle of the list — clear and re-warn if you need to correct one.
+
+Warnings are purely informational: issuing one doesn't mute, kick, or otherwise restrict the user. Stored per-server, per-user in `data/warnings.json`. All of this logic lives in `src/handlers/warnings.js`.
+
+### Bulk-deleting messages
+
+```
+/purge amount:[1-100] user:[optional]
+```
+
+Deletes the given number of recent messages in the channel the command is run in. Pass `user` to only delete messages from that person — this only searches within the channel's most recent 100 messages (a Discord API limit on bulk delete), so with `user` set you may get fewer than `amount` deleted if they haven't posted that many times recently. Messages older than 14 days are silently skipped instead of failing the whole command (another Discord API limit). Requires Manage Messages, Administrator, or a configured `moderation_roles` (see [Per-server access roles](#per-server-access-roles)). All of this logic lives in `src/handlers/moderation.js`.
+
+### Member & server info
+
+- `/userinfo user:[optional, default yourself]` — shows a member's tag, ID, avatar, account creation date, server join date, and roles.
+- `/serverinfo` — shows the server's owner, member/role/channel counts, boost level, and creation date.
+- `/avatar user:[optional, default yourself]` — posts a user's avatar at full size.
+
+No permissions required — anyone can look up anyone else's public info, same as opening their profile in Discord. All of this logic lives in `src/handlers/info.js`.
 
 ### Forum posts
 
@@ -189,15 +218,15 @@ This is a heuristic, not a guarantee: a slow, spread-out raid that stays under y
 /access-setup moderation_roles:[optional, mention roles] save_code_roles:[optional, mention roles] code_roles:[optional, mention roles] clear_moderation_roles:[optional] clear_save_code_roles:[optional] clear_code_roles:[optional]
 ```
 
-Admin-only command. Moderation commands, `/save-code`/`/delete-code`, and `/code` are registered without Discord's native permission restrictions — access is fully controlled in `src/handlers/moderation.js` and `src/handlers/codeStorage.js` instead, so each server can layer its own extra role(s) on top of the usual Discord permissions:
+Admin-only command. Moderation commands (including `/warn`/`/warnings`/`/clearwarnings`/`/purge`), `/save-code`/`/delete-code`, and `/code` are registered without Discord's native permission restrictions — access is fully controlled in `src/handlers/moderation.js`, `src/handlers/warnings.js`, and `src/handlers/codeStorage.js` instead (via the shared `hasModerationAccess()` in `src/lib/accessConfig.js`), so each server can layer its own extra role(s) on top of the usual Discord permissions:
 
-- `moderation_roles`: can use ban/kick/softban/mute/unmute/unban, in addition to whoever already has the matching native Discord permission (Ban Members, Kick Members, Moderate Members) or Administrator.
+- `moderation_roles`: can use ban/kick/softban/mute/unmute/unban/warn/warnings/clearwarnings/purge, in addition to whoever already has the matching native Discord permission (Ban Members, Kick Members, Moderate Members, or Manage Messages for `/purge`) or Administrator.
 - `save_code_roles`: can use `/save-code` and `/delete-code`, in addition to Mods/Admins.
 - `code_roles`: required to use `/code` — if you don't set this, it falls back to anyone with a role literally named **"Scripter"** (change `SCRIPTER_ROLE_NAME` at the top of `src/handlers/codeStorage.js` if you want a different default name).
 
 Each of these accepts **multiple roles** — just @mention all of them in the same option (e.g. `@Mod @Trusted`). Use the matching `clear_*` boolean to remove a configured set of roles and fall back to the defaults above. Saved per-server in `data/access-config.json`.
 
-**Every configuration in this bot — tickets, verification, moderation logs, anti-raid, access roles, and code storage — is stored per-server (keyed by the server's ID), under `data/`.** Running the bot on multiple servers never mixes their settings or data together.
+**Every configuration in this bot — tickets, verification, moderation logs, warnings, anti-raid, access roles, and code storage — is stored per-server (keyed by the server's ID), under `data/`.** Running the bot on multiple servers never mixes their settings or data together.
 
 ### Reaction roles
 

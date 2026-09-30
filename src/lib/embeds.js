@@ -13,6 +13,7 @@ export const DM_EMBED_CONFIG = {
   mute: { emoji: "🔇", title: "🔇 You were muted", channelAction: "was muted", color: 0xfee75c },
   unmute: { emoji: "🔊", title: "🔊 Your timeout was removed", channelAction: "was unmuted", color: 0x57f287 },
   unban: { emoji: "🔓", title: "🔓 You were unbanned", channelAction: "was unbanned", color: 0x57f287 },
+  warn: { emoji: "⚠️", title: "⚠️ You received a warning", channelAction: "was warned", color: 0xfaa61a },
 };
 
 // Short label for the channel embed's title (Discord titles don't render
@@ -24,6 +25,7 @@ export const COMMAND_LABELS = {
   mute: "Mute",
   unmute: "Unmute",
   unban: "Unban",
+  warn: "Warning",
 };
 
 // Full sentence shown as the log message's plain-text content, above the embed.
@@ -34,6 +36,7 @@ export const LOG_ANNOUNCE = {
   mute: "A user has been muted.",
   unmute: "A user has had their timeout removed.",
   unban: "A user has been unbanned.",
+  warn: "A user has been warned.",
 };
 
 // Title used in the log embed, e.g. "User Banned", "User Unbanned".
@@ -44,6 +47,7 @@ export const LOG_TITLES = {
   mute: "User Muted",
   unmute: "User Unmuted",
   unban: "User Unbanned",
+  warn: "User Warned",
 };
 
 // Log-channel embed: plain fields (User / User ID / Staff / Reason), no
@@ -66,6 +70,10 @@ export function buildLogEmbed(command, targetUser, reason, executor, extra = {})
     embed.addFields({ name: "Duration", value: `${extra.duration} minutes` });
   }
 
+  if (extra.count) {
+    embed.addFields({ name: "Warning #", value: `${extra.count}` });
+  }
+
   return embed;
 }
 
@@ -86,6 +94,10 @@ function buildEmbedBase(command, reason, executor, extra, title, description, th
 
   if (extra.duration) {
     embed.addFields({ name: "Duration", value: `${extra.duration} minutes`, inline: true });
+  }
+
+  if (extra.count) {
+    embed.addFields({ name: "Warning #", value: `${extra.count}`, inline: true });
   }
 
   if (extra.note) {

@@ -1,48 +1,14 @@
-// Moderation: /ban /kick /softban /mute /unmute /unban, plus their two
-// setup commands (/modlogs-setup, /access-setup).
+// Moderation: /ban /kick /softban /mute /unmute /unban /purge, plus their
+// two setup commands (/modlogs-setup, /access-setup).
 //
 // These commands are registered without setDefaultMemberPermissions (see
 // src/commands/definitions.js), so Discord shows them to everyone — access
 // is fully enforced here instead, using each server's Discord permissions
 // plus whatever extra moderation_role was set via /access-setup.
 import { PermissionFlagsBits } from "discord.js";
-import { join } from "node:path";
-import { DATA_DIR } from "../lib/constants.js";
-import { getGuildValue, setGuildValue } from "../lib/jsonStore.js";
-import { getAccessConfig, setAccessConfig, parseRoleMentions } from "../lib/accessConfig.js";
-import {
-  notifyUserByDM,
-  buildChannelModEmbed,
-  buildLogEmbed,
-  LOG_ANNOUNCE,
-} from "../lib/embeds.js";
-
-const MODLOG_CONFIG_PATH = join(DATA_DIR, "modlogs-config.json");
-
-async function getModLogConfig(guildId) {
-  return getGuildValue(MODLOG_CONFIG_PATH, guildId, null);
-}
-
-async function setModLogConfig(guildId, partial) {
-  return setGuildValue(MODLOG_CONFIG_PATH, guildId, partial);
-}
-
-// Sends the log embed to the guild's configured mod-log channel, if any.
-// Silently does nothing if /modlogs-setup hasn't been run for this guild.
-async function sendModLog(command, targetUser, guild, reason, executor, extra = {}) {
-  const logConfig = await getModLogConfig(guild.id);
-  if (!logConfig?.logChannelId) return;
-
-  const logChannel = await guild.channels.fetch(logConfig.logChannelId).catch(() => null);
-  if (!logChannel) return;
-
-  await logChannel
-    .send({
-      content: LOG_ANNOUNCE[command],
-      embeds: [buildLogEmbed(command, targetUser, reason, executor, extra)],
-    })
-    .catch((error) => console.error("Error sending mod log:", error));
-}
+import { getAccessConfig, setAccessConfig, parseRoleMentions, hasModerationAccess } from "../lib/accessConfig.js";
+import { notifyUserByDM, buildChannelModEmbed } from "../lib/embeds.js";
+import { setModLogConfig, sendModLog } from "../lib/modLog.js";
 
 const REQUIRED_NATIVE_PERMISSION = {
   ban: PermissionFlagsBits.BanMembers,
@@ -65,7 +31,7 @@ export function registerModerationHandlers(client) {
     try {
       await setModLogConfig(interaction.guild.id, { logChannelId: logChannel.id });
       await interaction.editReply(
-        `✅ Moderation logs (ban/kick/softban/mute/unmute/unban) will now be sent to <#${logChannel.id}>.`
+        `✅ Moderation logs (ban/kick/softban/mute/unmute/unban/warn) will now be sent to <#${logChannel.id}>.`
       );
     } catch (error) {
       console.error("Error setting up modlogs:", error);
@@ -125,11 +91,10 @@ export function registerModerationHandlers(client) {
     const moderationCommands = ["ban", "kick", "softban", "mute", "unmute", "unban"];
     if (!moderationCommands.includes(interaction.commandName)) return;
 
-    const accessConfig = await getAccessConfig(interaction.guild.id);
-    const hasAccess =
-      interaction.member.permissions.has(PermissionFlagsBits.Administrator) ||
-      interaction.member.permissions.has(REQUIRED_NATIVE_PERMISSION[interaction.commandName]) ||
-      (accessConfig.moderationRoleIds ?? []).some((id) => interaction.member.roles.cache.has(id));
+    const hasAccess = await hasModerationAccess(
+      interaction.member,
+      REQUIRED_NATIVE_PERMISSION[interaction.commandName]
+    );
 
     if (!hasAccess) {
       await interaction.reply({
@@ -276,6 +241,54 @@ export function registerModerationHandlers(client) {
       } else {
         await interaction.reply({ content: message, ephemeral: true });
       }
+    }
+  });
+
+  client.on("interactionCreate", async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+    if (interaction.commandName !== "purge") return;
+
+    const hasAccess = await hasModerationAccess(interaction.member, PermissionFlagsBits.ManageMessages);
+    if (!hasAccess) {
+      await interaction.reply({
+        content: "You don't have permission to use this command.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const amount = interaction.options.getInteger("amount", true);
+    const targetUser = interaction.options.getUser("user");
+
+    await interaction.deferReply({ ephemeral: true });
+
+    try {
+      // Discord only lets bulkDelete touch the most recent 100 messages in
+      // one call, so a "from this user" filter searches within that recent
+      // window rather than the whole channel history.
+      const recentMessages = await interaction.channel.messages.fetch({ limit: 100 });
+      const candidates = targetUser
+        ? recentMessages.filter((message) => message.author.id === targetUser.id)
+        : recentMessages;
+      const toDelete = candidates.first(amount);
+
+      if (!toDelete.length) {
+        await interaction.editReply("No matching messages found to delete.");
+        return;
+      }
+
+      // The `true` second argument makes bulkDelete silently skip messages
+      // older than 14 days instead of throwing on the whole batch (Discord's
+      // API rejects bulk-deleting anything older than that).
+      const deleted = await interaction.channel.bulkDelete(toDelete, true);
+      await interaction.editReply(
+        `🧹 Deleted ${deleted.size} message${deleted.size === 1 ? "" : "s"}${
+          targetUser ? ` from ${targetUser.tag}` : ""
+        }.`
+      );
+    } catch (error) {
+      console.error("Error running /purge:", error);
+      await interaction.editReply("An error occurred deleting messages. Check my Manage Messages permission here.");
     }
   });
 }
