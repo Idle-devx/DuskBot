@@ -201,7 +201,7 @@ Si alguien responde directamente a un mensaje del bot, este responde automática
 
 ## Notas
 
-- El modelo utilizado es `gemini-3.8-flash` (disponible en el nivel gratuito de Gemini); se puede cambiar en la constante `MODEL` de `src/handlers/ask.js`. En el nivel gratuito, Google usa los mensajes y respuestas para mejorar sus productos.
+- El modelo utilizado es `gemini-3.8-flash`, con `gemini-3.7-flash` como respaldo cuando Google indica que el primero está saturado o sin cuota (ambos en el nivel gratuito de Gemini); se pueden cambiar en la lista `MODELS` de `src/handlers/ask.js`. En el nivel gratuito, Google usa los mensajes y respuestas para mejorar sus productos.
 - Discord limita los mensajes a 2000 caracteres; el bot divide automáticamente las respuestas largas.
 - La conversión de GIF utiliza `ffmpeg-static`, que incluye el ejecutable de ffmpeg.
 - `node scripts/check-commands.js` verifica que cada comando definido tenga un handler correspondiente.

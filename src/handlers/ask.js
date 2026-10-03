@@ -5,7 +5,12 @@ import { GoogleGenAI } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-const MODEL = "gemini-3.8-flash";
+// Tried in order: Google's free tier regularly answers 503 ("high demand")
+// or 429 (quota) for one model while another is fine.
+const MODELS = ["gemini-3.8-flash", "gemini-3.7-flash"];
+const RETRY_DELAY_MS = 1500;
+
+const isBusyError = (error) => error?.status === 503 || error?.status === 429;
 
 // Gemini's thinking tokens count against this budget too, so it's set
 // higher than the visible answer length we actually want.
@@ -64,6 +69,29 @@ async function buildFilePart(attachment, kind, mimeType) {
     return { inlineData: { mimeType, data: buffer.toString("base64") } };
   }
   return { text: `Contents of the attached file "${attachment.name}":\n\n${buffer.toString("utf-8")}` };
+}
+
+async function generate(contents) {
+  let lastError;
+  for (const model of MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await ai.models.generateContent({
+          model,
+          contents,
+          config: { maxOutputTokens: MAX_OUTPUT_TOKENS },
+        });
+      } catch (error) {
+        if (!isBusyError(error)) throw error;
+        lastError = error;
+        console.warn(`Gemini ${model} unavailable (HTTP ${error.status}), attempt ${attempt + 1}`);
+        // A quota error won't clear in a second; go straight to the next model.
+        if (error.status === 429) break;
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      }
+    }
+  }
+  throw lastError;
 }
 
 // Keeps the last few turns per conversation to give responses continuity.
@@ -157,11 +185,7 @@ export function registerAskHandler(client) {
         userParts.unshift(await buildFilePart(attachment, fileType.kind, fileType.mimeType));
       }
 
-      const response = await ai.models.generateContent({
-        model: MODEL,
-        contents: [...history, { role: "user", parts: userParts }],
-        config: { maxOutputTokens: MAX_OUTPUT_TOKENS },
-      });
+      const response = await generate([...history, { role: "user", parts: userParts }]);
 
       // Empty when the safety filters block the answer or the token budget
       // ran out before any visible text was produced.
@@ -184,7 +208,9 @@ export function registerAskHandler(client) {
     } catch (error) {
       console.error("Error calling the Gemini API:", error);
       await interaction.editReply(
-        "An error occurred while talking to the model. Check the bot's console for more details."
+        isBusyError(error)
+          ? "The AI is overloaded right now. Try again in a minute."
+          : "An error occurred while talking to the model. Check the bot's console for more details."
       );
     }
   });
