@@ -1,6 +1,6 @@
 // Per-project code snippet storage, isolated per guild
 // (data/codigos/<guildId>/<project>/<name>.txt).
-import { AttachmentBuilder, PermissionFlagsBits } from "discord.js";
+import { AttachmentBuilder, PermissionFlagsBits, MessageFlags } from "discord.js";
 import { writeFile, mkdir, rm, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -120,7 +120,7 @@ export function registerCodeStorageHandlers(client) {
 
     const accessConfig = await getAccessConfig(interaction.guild.id);
     if (!canSaveCode(interaction.member, accessConfig)) {
-      await interaction.reply({ content: "You don't have permission to save code.", ephemeral: true });
+      await interaction.reply({ content: "You don't have permission to save code.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -132,7 +132,7 @@ export function registerCodeStorageHandlers(client) {
     if (!project || !name) {
       await interaction.reply({
         content: "`project` and `name` need at least one non-slash, non-dot character.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -140,7 +140,7 @@ export function registerCodeStorageHandlers(client) {
     if (!file && !content) {
       await interaction.reply({
         content: "You must attach a file or write content in the `content` option.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -151,12 +151,12 @@ export function registerCodeStorageHandlers(client) {
     if (file && file.size > MAX_INPUT_SIZE) {
       await interaction.reply({
         content: "The file is too large (25 MB max).",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       const guildDir = await ensureGuildCodeDir(interaction.guild.id);
@@ -187,7 +187,7 @@ export function registerCodeStorageHandlers(client) {
 
     const accessConfig = await getAccessConfig(interaction.guild.id);
     if (!canSaveCode(interaction.member, accessConfig)) {
-      await interaction.reply({ content: "You don't have permission to delete code.", ephemeral: true });
+      await interaction.reply({ content: "You don't have permission to delete code.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -197,7 +197,7 @@ export function registerCodeStorageHandlers(client) {
     if (!project) {
       await interaction.reply({
         content: "`project` needs at least one non-slash, non-dot character.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -205,7 +205,7 @@ export function registerCodeStorageHandlers(client) {
     const guildDir = guildCodeDir(interaction.guild.id);
     const projectDir = join(guildDir, project);
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       if (!name) {
@@ -250,7 +250,7 @@ export function registerCodeStorageHandlers(client) {
         : `the "${SCRIPTER_ROLE_NAME}" role`;
       await interaction.reply({
         content: `You don't have permission to use this command (requires ${roleHint}).`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -261,7 +261,7 @@ export function registerCodeStorageHandlers(client) {
     if (!project || !name) {
       await interaction.reply({
         content: "`project` and `name` need at least one non-slash, non-dot character.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -271,7 +271,7 @@ export function registerCodeStorageHandlers(client) {
     if (!existsSync(filePath)) {
       await interaction.reply({
         content: `Couldn't find anything saved as \`${project}/${name}\`.`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }

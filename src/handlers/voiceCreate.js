@@ -2,7 +2,7 @@
 // channel. Whenever someone joins it, the bot creates a new personal voice
 // channel next to it, moves them in, and deletes it again automatically
 // once everyone leaves.
-import { ChannelType, EmbedBuilder } from "discord.js";
+import { ChannelType, EmbedBuilder, Events, MessageFlags } from "discord.js";
 import { join } from "node:path";
 import { DATA_DIR } from "../lib/constants.js";
 import { getGuildValue, setGuildValue, updateJSON, readJSON } from "../lib/jsonStore.js";
@@ -151,7 +151,7 @@ async function sweepTrackedChannels(client) {
 }
 
 export function registerVoiceCreateHandlers(client) {
-  client.once("ready", async () => {
+  client.once(Events.ClientReady, async () => {
     await loadTrackedChannelIds();
     await sweepTrackedChannels(client);
   });
@@ -171,7 +171,7 @@ export function registerVoiceCreateHandlers(client) {
 
     const disable = interaction.options.getBoolean("disable") ?? false;
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     if (disable) {
       await clearConfig(interaction.guild.id);

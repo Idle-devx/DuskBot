@@ -6,6 +6,7 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  MessageFlags,
 } from "discord.js";
 import { join } from "node:path";
 import { DATA_DIR } from "../lib/constants.js";
@@ -84,7 +85,7 @@ export function registerVerifyHandlers(client) {
     const kickHours = interaction.options.getInteger("kick_hours") ?? DEFAULT_KICK_HOURS;
     const logChannel = interaction.options.getChannel("log_channel");
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       const panelMessage = await panelChannel.send({
@@ -146,25 +147,25 @@ export function registerVerifyHandlers(client) {
 
     const config = await getConfig(interaction.guild.id);
     if (!config) {
-      await interaction.reply({ content: "Verification isn't set up on this server.", ephemeral: true });
+      await interaction.reply({ content: "Verification isn't set up on this server.", flags: MessageFlags.Ephemeral });
       return;
     }
 
     try {
       if (interaction.member.roles.cache.has(config.verifiedRoleId)) {
-        await interaction.reply({ content: "You're already verified!", ephemeral: true });
+        await interaction.reply({ content: "You're already verified!", flags: MessageFlags.Ephemeral });
         return;
       }
 
       await interaction.member.roles.add(config.verifiedRoleId);
       await removePending(interaction.guild.id, interaction.member.id);
-      await interaction.reply({ content: "✅ You're verified! Welcome.", ephemeral: true });
+      await interaction.reply({ content: "✅ You're verified! Welcome.", flags: MessageFlags.Ephemeral });
       await sendVerifyLog(interaction.guild, config, `✅ <@${interaction.member.id}> verified.`);
     } catch (error) {
       console.error("Error verifying member:", error);
       await interaction.reply({
         content: "I couldn't give you the role. Ask a staff member to check my permissions (my role must be above the verified role).",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   });

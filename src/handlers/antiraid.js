@@ -9,7 +9,7 @@
 // genuine viral growth spurt (e.g. your server gets shared somewhere) could
 // false-positive into a lockdown. Tune join_threshold/time_window_seconds
 // to your server's normal traffic.
-import { EmbedBuilder, GuildVerificationLevel } from "discord.js";
+import { EmbedBuilder, GuildVerificationLevel, MessageFlags } from "discord.js";
 import { join } from "node:path";
 import { DATA_DIR } from "../lib/constants.js";
 import { getGuildValue, setGuildValue } from "../lib/jsonStore.js";
@@ -146,7 +146,7 @@ export function registerAntiRaidHandlers(client) {
     const lockdownMinutes =
       interaction.options.getInteger("lockdown_minutes") ?? DEFAULT_LOCKDOWN_MINUTES;
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       await setConfig(interaction.guild.id, {

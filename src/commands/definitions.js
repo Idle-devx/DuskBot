@@ -39,6 +39,19 @@ export const allCommands = [
         .setDescription("Optional image, PDF, audio, video, or text/code file for the AI to analyze")
     ),
   new SlashCommandBuilder()
+    .setName("ask-setup")
+    .setDescription("Sets, shows, or resets the personality /ask uses on this server")
+    .addStringOption((option) =>
+      option
+        .setName("personality")
+        .setDescription("How the AI should talk and behave here, e.g. 'A cheerful pirate who loves puns'")
+        .setMaxLength(1000)
+    )
+    .addBooleanOption((option) =>
+      option.setName("reset").setDescription("Go back to the bot's default personality")
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
     .setName("gif")
     .setDescription("Converts an attached video or image into a GIF")
     .addAttachmentOption((option) =>

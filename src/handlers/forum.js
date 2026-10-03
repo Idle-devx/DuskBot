@@ -1,5 +1,5 @@
 // /forum: creates a post in a forum channel, with up to 3 optional images.
-import { ChannelType } from "discord.js";
+import { ChannelType, MessageFlags } from "discord.js";
 
 export function registerForumHandler(client) {
   client.on("interactionCreate", async (interaction) => {
@@ -15,7 +15,7 @@ export function registerForumHandler(client) {
       interaction.options.getAttachment("image3"),
     ].filter(Boolean);
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     if (channel.type !== ChannelType.GuildForum) {
       await interaction.editReply("The selected channel isn't a forum channel.");

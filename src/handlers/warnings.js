@@ -11,7 +11,7 @@
 // "one file per feature" convention — but it still reuses moderation.js's
 // DM/channel embeds and the shared mod-log channel (src/lib/modLog.js) so a
 // warning shows up next to bans/kicks/etc. in the same log channel.
-import { EmbedBuilder, PermissionFlagsBits } from "discord.js";
+import { EmbedBuilder, PermissionFlagsBits, MessageFlags } from "discord.js";
 import { join } from "node:path";
 import { DATA_DIR } from "../lib/constants.js";
 import { updateJSON, readJSON } from "../lib/jsonStore.js";
@@ -52,7 +52,7 @@ async function clearWarnings(guildId, userId) {
 async function requireModerationAccess(interaction) {
   const allowed = await hasModerationAccess(interaction.member, PermissionFlagsBits.ModerateMembers);
   if (!allowed) {
-    await interaction.reply({ content: "You don't have permission to use this command.", ephemeral: true });
+    await interaction.reply({ content: "You don't have permission to use this command.", flags: MessageFlags.Ephemeral });
   }
   return allowed;
 }
@@ -81,7 +81,7 @@ export function registerWarningHandlers(client) {
       await sendModLog("warn", targetUser, interaction.guild, reason, interaction.user, { count });
     } catch (error) {
       console.error("Error running /warn:", error);
-      await interaction.reply({ content: "An error occurred saving the warning.", ephemeral: true });
+      await interaction.reply({ content: "An error occurred saving the warning.", flags: MessageFlags.Ephemeral });
     }
   });
 
@@ -91,7 +91,7 @@ export function registerWarningHandlers(client) {
     if (!(await requireModerationAccess(interaction))) return;
 
     const targetUser = interaction.options.getUser("user", true);
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const userWarnings = await getWarnings(interaction.guild.id, targetUser.id);
     if (!userWarnings.length) {
@@ -122,7 +122,7 @@ export function registerWarningHandlers(client) {
     if (!(await requireModerationAccess(interaction))) return;
 
     const targetUser = interaction.options.getUser("user", true);
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const removed = await clearWarnings(interaction.guild.id, targetUser.id);
     await interaction.editReply(

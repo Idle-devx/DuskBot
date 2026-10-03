@@ -1,7 +1,14 @@
 // /ask: sends the user's message to Gemini and replies with the model's
 // answer, splitting it into multiple messages if it's over Discord's 2000
-// character limit.
+// character limit. /ask-setup lets each server replace the bot's default
+// personality with its own.
+import { MessageFlags } from "discord.js";
 import { GoogleGenAI } from "@google/genai";
+import { join } from "node:path";
+import { DATA_DIR } from "../lib/constants.js";
+import { getGuildValue, setGuildValue } from "../lib/jsonStore.js";
+
+const CONFIG_PATH = join(DATA_DIR, "ask-config.json");
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -11,6 +18,32 @@ const MODELS = ["gemini-3.8-flash", "gemini-3.7-flash"];
 const RETRY_DELAY_MS = 1500;
 
 const isBusyError = (error) => error?.status === 503 || error?.status === 429;
+
+// Used on every server that hasn't set its own with /ask-setup.
+const DEFAULT_PERSONALITY = `Your personality is tsundere. You act a little put out at being asked and
+insist you're not helping because you care or anything, yet you always end up giving a
+complete, correct and genuinely useful answer, and now and then your warmer side slips out
+before you cover it up. Keep it playful and light: tease, never insult or belittle the person,
+and don't let the act get in the way of the actual answer. If the topic is serious or the
+person seems upset, drop the act and just be kind and clear.`;
+
+// These facts hold on every server, whatever personality it configured, so
+// they live apart from the personality text. The model name is filled in per
+// request because the fallback model may be the one that answers.
+function buildSystemInstruction(model, personality) {
+  return `You are DuskBot, a Discord bot developed by Duskidle. You are running on Google's
+${model} model and you started operating in September 2026.
+
+When someone asks who created you, what you are, which model you use, or since when you've
+been around, answer with those facts, in character and with a bit of humor, along the lines
+of: "I'm a bot developed by Duskidle, I use the ${model} model, and I started operating in
+September 2026". Don't bring these facts up when nobody asked.
+
+${personality}
+
+Reply in the same language the person writes in. You're talking in a Discord chat, so keep
+answers reasonably short unless the question needs detail.`;
+}
 
 // Gemini's thinking tokens count against this budget too, so it's set
 // higher than the visible answer length we actually want.
@@ -71,7 +104,7 @@ async function buildFilePart(attachment, kind, mimeType) {
   return { text: `Contents of the attached file "${attachment.name}":\n\n${buffer.toString("utf-8")}` };
 }
 
-async function generate(contents) {
+async function generate(contents, personality) {
   let lastError;
   for (const model of MODELS) {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -79,7 +112,10 @@ async function generate(contents) {
         return await ai.models.generateContent({
           model,
           contents,
-          config: { maxOutputTokens: MAX_OUTPUT_TOKENS },
+          config: {
+            maxOutputTokens: MAX_OUTPUT_TOKENS,
+            systemInstruction: buildSystemInstruction(model, personality),
+          },
         });
       } catch (error) {
         if (!isBusyError(error)) throw error;
@@ -159,7 +195,7 @@ export function registerAskHandler(client) {
         await interaction.reply({
           content:
             "I can't read that kind of file. Supported: images (PNG, JPEG, WebP, HEIC), PDF, audio, video, and text/code files.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -168,7 +204,7 @@ export function registerAskHandler(client) {
       if (attachment.size > maxSize) {
         await interaction.reply({
           content: `That file is too large (max ${maxSize / (1024 * 1024)} MB for this kind of file).`,
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -185,7 +221,11 @@ export function registerAskHandler(client) {
         userParts.unshift(await buildFilePart(attachment, fileType.kind, fileType.mimeType));
       }
 
-      const response = await generate([...history, { role: "user", parts: userParts }]);
+      // Outside a server (e.g. DMs) there's no per-guild config to look up.
+      const config = interaction.guildId ? await getGuildValue(CONFIG_PATH, interaction.guildId, null) : null;
+      const personality = config?.personality || DEFAULT_PERSONALITY;
+
+      const response = await generate([...history, { role: "user", parts: userParts }], personality);
 
       // Empty when the safety filters block the answer or the token budget
       // ran out before any visible text was produced.
@@ -212,6 +252,41 @@ export function registerAskHandler(client) {
           ? "The AI is overloaded right now. Try again in a minute."
           : "An error occurred while talking to the model. Check the bot's console for more details."
       );
+    }
+  });
+
+  // --- /ask-setup ---
+  client.on("interactionCreate", async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+    if (interaction.commandName !== "ask-setup") return;
+
+    const personality = interaction.options.getString("personality")?.trim();
+    const reset = interaction.options.getBoolean("reset") ?? false;
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    try {
+      if (reset) {
+        await setGuildValue(CONFIG_PATH, interaction.guild.id, { personality: null });
+        await interaction.editReply("✅ Personality reset. /ask is back to the default one on this server.");
+        return;
+      }
+
+      if (personality) {
+        await setGuildValue(CONFIG_PATH, interaction.guild.id, { personality });
+        await interaction.editReply(`✅ /ask will now use this personality on this server:\n>>> ${personality}`);
+        return;
+      }
+
+      const config = await getGuildValue(CONFIG_PATH, interaction.guild.id, null);
+      await interaction.editReply(
+        config?.personality
+          ? `This server's custom personality for /ask:\n>>> ${config.personality}`
+          : "This server uses the default personality. Set your own with the `personality` option."
+      );
+    } catch (error) {
+      console.error("Error in /ask-setup:", error);
+      await interaction.editReply("An error occurred saving the configuration.");
     }
   });
 }

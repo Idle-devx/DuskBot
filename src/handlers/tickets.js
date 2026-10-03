@@ -12,6 +12,8 @@ import {
   StringSelectMenuBuilder,
   ChannelType,
   PermissionFlagsBits,
+  Events,
+  MessageFlags,
 } from "discord.js";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -302,7 +304,7 @@ function startBackgroundChecker(client) {
 }
 
 export function registerTicketHandlers(client) {
-  client.once("ready", async () => {
+  client.once(Events.ClientReady, async () => {
     await loadOpenTicketChannelIds();
     startBackgroundChecker(client);
   });
@@ -326,7 +328,7 @@ export function registerTicketHandlers(client) {
       const alertHours = interaction.options.getInteger("alert_hours");
       const inactivityHours = interaction.options.getInteger("inactivity_hours");
 
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       try {
         await panelChannel.send({
@@ -367,7 +369,7 @@ export function registerTicketHandlers(client) {
       await interaction.reply({
         content: "Choose a category for your ticket:",
         components: [buildCategorySelect()],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -390,7 +392,7 @@ export function registerTicketHandlers(client) {
       if (existing) {
         await interaction.followUp({
           content: `You already have an open ticket: <#${existing.id}>`,
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -455,7 +457,7 @@ export function registerTicketHandlers(client) {
 
         await interaction.followUp({
           content: `✅ Your ticket was created: <#${ticketChannel.id}>`,
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
 
         if (guildConfig?.logChannelId) {
@@ -479,7 +481,7 @@ export function registerTicketHandlers(client) {
         console.error("Error creating ticket channel:", error);
         await interaction.followUp({
           content: "An error occurred creating your ticket. Check that I have permission to create channels here.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
       return;
@@ -496,13 +498,13 @@ export function registerTicketHandlers(client) {
       if (!canCloseTicket(interaction.member, openerId, guildConfig)) {
         await interaction.reply({
           content: "You don't have permission to close this ticket.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
 
       if (closingChannels.has(channel.id)) {
-        await interaction.reply({ content: "This ticket is already being closed.", ephemeral: true });
+        await interaction.reply({ content: "This ticket is already being closed.", flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -521,7 +523,7 @@ export function registerTicketHandlers(client) {
       if (!openerMatch) {
         await interaction.reply({
           content: "This command can only be used inside a ticket channel.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -532,13 +534,13 @@ export function registerTicketHandlers(client) {
       if (!canCloseTicket(interaction.member, openerId, guildConfig)) {
         await interaction.reply({
           content: "You don't have permission to close this ticket.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
 
       if (closingChannels.has(channel.id)) {
-        await interaction.reply({ content: "This ticket is already being closed.", ephemeral: true });
+        await interaction.reply({ content: "This ticket is already being closed.", flags: MessageFlags.Ephemeral });
         return;
       }
 

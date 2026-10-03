@@ -71,6 +71,16 @@ También puedes adjuntar un archivo para que la IA lo analice, con la opción op
 
 Archivos admitidos: imágenes (PNG, JPEG, WebP, HEIC — no GIF), PDF, audio y video de hasta 10 MB, y archivos de texto o código de hasta 1 MB. El archivo solo se envía con esa pregunta; las preguntas siguientes se apoyan en lo que la IA ya dijo sobre él, así que vuelve a adjuntarlo si necesitas que lo revise de nuevo.
 
+#### Personalidad
+
+Por defecto la IA responde como DuskBot con personalidad tsundere (definida en `DEFAULT_PERSONALITY` en `src/handlers/ask.js`). Cada servidor puede reemplazarla por la suya:
+
+```text
+/ask-setup personality: Un pirata alegre al que le encantan los juegos de palabras
+```
+
+Solo para administradores. Ejecuta `/ask-setup` sin opciones para ver la personalidad actual, o `/ask-setup reset:true` para volver a la predeterminada. Sea cual sea la personalidad, el bot sigue sabiendo quién lo creó, qué modelo usa y desde cuándo opera, y lo dice cuando se le pregunta. Guardado por servidor en `data/ask-config.json`.
+
 ### Convertir un video o una imagen a GIF
 
 ```text

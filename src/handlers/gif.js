@@ -1,6 +1,6 @@
 // /gif: downloads an attached video or image and converts it to a GIF
 // with ffmpeg.
-import { AttachmentBuilder } from "discord.js";
+import { AttachmentBuilder, MessageFlags } from "discord.js";
 import ffmpegPath from "ffmpeg-static";
 import ffmpeg from "fluent-ffmpeg";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
@@ -44,7 +44,7 @@ export function registerGifHandler(client) {
     if (attachment.size > MAX_INPUT_SIZE) {
       await interaction.reply({
         content: "The file is too large (25 MB max).",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }

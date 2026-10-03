@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Partials } from "discord.js";
+import { Client, GatewayIntentBits, Partials, Events } from "discord.js";
 import "dotenv/config";
 
 import { registerAskHandler } from "./handlers/ask.js";
@@ -67,7 +67,7 @@ registerVoiceCreateHandlers(client);
 registerWarningHandlers(client);
 registerInfoHandlers(client);
 
-client.once("ready", () => {
+client.once(Events.ClientReady, () => {
   console.log(`Bot logged in as ${client.user.tag}`);
 });
 

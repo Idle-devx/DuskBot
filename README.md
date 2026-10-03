@@ -11,7 +11,7 @@ discord-bot/
 │   ├── commands/
 │   │   └── definitions.js    # All slash command definitions (registered by scripts/deploy-*.js)
 │   ├── handlers/             # One file per feature — each exports a register*Handler(s)(client) function
-│   │   ├── ask.js            # /ask (Gemini)
+│   │   ├── ask.js            # /ask (Gemini, with file analysis), /ask-setup (per-server personality)
 │   │   ├── gif.js            # /gif (video/image -> GIF conversion)
 │   │   ├── gifReplies.js     # Automatic GIF replies (GIPHY)
 │   │   ├── forum.js          # /forum
@@ -109,6 +109,16 @@ You can also attach a file for the AI to analyze, using the optional `file` opti
 ```
 
 Supported files: images (PNG, JPEG, WebP, HEIC — not GIF), PDF, audio, and video up to 10 MB, plus text and source-code files up to 1 MB. The file is only sent with that one question; follow-up questions rely on what the AI already said about it, so re-attach it if you need it looked at again.
+
+#### Personality
+
+By default the AI answers as DuskBot with a tsundere personality (set in `DEFAULT_PERSONALITY` in `src/handlers/ask.js`). Each server can replace it with its own:
+
+```
+/ask-setup personality: A cheerful pirate who loves puns
+```
+
+Admin-only. Run `/ask-setup` with no options to see the current personality, or `/ask-setup reset:true` to go back to the default. Whatever the personality, the bot still knows who made it, which model it's running on, and since when it's been operating, and says so when asked. Saved per-server in `data/ask-config.json`.
 
 ### Convert video or image to GIF
 
@@ -234,7 +244,7 @@ Admin-only command. Moderation commands (including `/warn`/`/warnings`/`/clearwa
 
 Each of these accepts **multiple roles** — just @mention all of them in the same option (e.g. `@Mod @Trusted`). Use the matching `clear_*` boolean to remove a configured set of roles and fall back to the defaults above. Saved per-server in `data/access-config.json`.
 
-**Every configuration in this bot — tickets, verification, moderation logs, warnings, anti-raid, access roles, and code storage — is stored per-server (keyed by the server's ID), under `data/`.** Running the bot on multiple servers never mixes their settings or data together.
+**Every configuration in this bot — the /ask personality, tickets, verification, moderation logs, warnings, anti-raid, access roles, and code storage — is stored per-server (keyed by the server's ID), under `data/`.** Running the bot on multiple servers never mixes their settings or data together.
 
 ### Reaction roles
 

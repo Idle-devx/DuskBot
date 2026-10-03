@@ -2,7 +2,7 @@
 // thumbnail, plus a description of what each reaction grants), then maps
 // individual emoji to roles with /reactionrole-add. Reacting with a mapped
 // emoji grants the role; removing the reaction removes it again.
-import { EmbedBuilder } from "discord.js";
+import { EmbedBuilder, MessageFlags } from "discord.js";
 import { join } from "node:path";
 import { DATA_DIR } from "../lib/constants.js";
 import { readJSON, updateJSON } from "../lib/jsonStore.js";
@@ -89,13 +89,13 @@ export function registerReactionRoleHandlers(client) {
       if (colorInput) {
         const hexMatch = colorInput.trim().match(/^#?([0-9a-fA-F]{6})$/);
         if (!hexMatch) {
-          await interaction.reply({ content: "`color` must be a hex code like `#5865F2`.", ephemeral: true });
+          await interaction.reply({ content: "`color` must be a hex code like `#5865F2`.", flags: MessageFlags.Ephemeral });
           return;
         }
         color = parseInt(hexMatch[1], 16);
       }
 
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       try {
         const panel = { channelId: channel.id, title, description, color, roles: [] };
@@ -126,19 +126,19 @@ export function registerReactionRoleHandlers(client) {
       if (!panel) {
         await interaction.reply({
           content: "No reaction-role panel with that message ID exists in this server. Run `/reactionrole-setup` first.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
 
       if (role.id === interaction.guild.id) {
-        await interaction.reply({ content: "You can't use @everyone as a reaction role.", ephemeral: true });
+        await interaction.reply({ content: "You can't use @everyone as a reaction role.", flags: MessageFlags.Ephemeral });
         return;
       }
       if (role.managed) {
         await interaction.reply({
           content: "That role belongs to a bot/integration and can't be assigned manually.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -146,12 +146,12 @@ export function registerReactionRoleHandlers(client) {
       if (botMember.roles.highest.position <= role.position) {
         await interaction.reply({
           content: `My role must be above ${role} in the role list for me to grant it.`,
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
 
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       try {
         const channel = await interaction.guild.channels.fetch(panel.channelId).catch(() => null);
@@ -196,7 +196,7 @@ export function registerReactionRoleHandlers(client) {
       if (!panel) {
         await interaction.reply({
           content: "No reaction-role panel with that message ID exists in this server.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -205,12 +205,12 @@ export function registerReactionRoleHandlers(client) {
       if (!match) {
         await interaction.reply({
           content: "That panel doesn't have a role mapped to that emoji.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
 
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       try {
         const roles = panel.roles.filter((r) => r.key !== key);

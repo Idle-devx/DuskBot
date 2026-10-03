@@ -5,7 +5,7 @@
 // src/commands/definitions.js), so Discord shows them to everyone — access
 // is fully enforced here instead, using each server's Discord permissions
 // plus whatever extra moderation_role was set via /access-setup.
-import { PermissionFlagsBits } from "discord.js";
+import { PermissionFlagsBits, MessageFlags } from "discord.js";
 import { getAccessConfig, setAccessConfig, parseRoleMentions, hasModerationAccess } from "../lib/accessConfig.js";
 import { notifyUserByDM, buildChannelModEmbed } from "../lib/embeds.js";
 import { setModLogConfig, sendModLog } from "../lib/modLog.js";
@@ -26,7 +26,7 @@ export function registerModerationHandlers(client) {
 
     const logChannel = interaction.options.getChannel("log_channel", true);
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       await setModLogConfig(interaction.guild.id, { logChannelId: logChannel.id });
@@ -50,7 +50,7 @@ export function registerModerationHandlers(client) {
     const clearSaveCodeRoles = interaction.options.getBoolean("clear_save_code_roles");
     const clearCodeRoles = interaction.options.getBoolean("clear_code_roles");
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       const update = {};
@@ -99,7 +99,7 @@ export function registerModerationHandlers(client) {
     if (!hasAccess) {
       await interaction.reply({
         content: "You don't have permission to use this command.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -128,7 +128,7 @@ export function registerModerationHandlers(client) {
         console.error("Error running /unban:", error);
         await interaction.reply({
           content: "Couldn't unban that user. Check that the ID is correct and that they're banned.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
       return;
@@ -237,9 +237,9 @@ export function registerModerationHandlers(client) {
           ? "I don't have enough permissions to do that (check that my role is above the target user)."
           : "An error occurred running the command.";
       if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({ content: message, ephemeral: true });
+        await interaction.followUp({ content: message, flags: MessageFlags.Ephemeral });
       } else {
-        await interaction.reply({ content: message, ephemeral: true });
+        await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
       }
     }
   });
@@ -252,7 +252,7 @@ export function registerModerationHandlers(client) {
     if (!hasAccess) {
       await interaction.reply({
         content: "You don't have permission to use this command.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -260,7 +260,7 @@ export function registerModerationHandlers(client) {
     const amount = interaction.options.getInteger("amount", true);
     const targetUser = interaction.options.getUser("user");
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       // Discord only lets bulkDelete touch the most recent 100 messages in
