@@ -32,6 +32,11 @@ export const allCommands = [
         .setName("message")
         .setDescription("What you want to ask")
         .setRequired(true)
+    )
+    .addAttachmentOption((option) =>
+      option
+        .setName("file")
+        .setDescription("Optional image, PDF, audio, video, or text/code file for the AI to analyze")
     ),
   new SlashCommandBuilder()
     .setName("gif")

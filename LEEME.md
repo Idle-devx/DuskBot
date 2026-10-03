@@ -63,6 +63,14 @@ En cualquier canal donde esté presente el bot, escribe:
 
 El bot responderá utilizando un modelo de IA. Cada persona mantiene su propio historial reciente de conversación por canal (en memoria, se pierde si el bot se reinicia) para mantener las respuestas contextualizadas — las preguntas de una persona nunca se filtran hacia las respuestas de otra, aunque estén en el mismo canal.
 
+También puedes adjuntar un archivo para que la IA lo analice, con la opción opcional `file`:
+
+```text
+/ask message: ¿Qué significa este error? file: [adjunta una captura]
+```
+
+Archivos admitidos: imágenes (PNG, JPEG, WebP, HEIC — no GIF), PDF, audio y video de hasta 10 MB, y archivos de texto o código de hasta 1 MB. El archivo solo se envía con esa pregunta; las preguntas siguientes se apoyan en lo que la IA ya dijo sobre él, así que vuelve a adjuntarlo si necesitas que lo revise de nuevo.
+
 ### Convertir un video o una imagen a GIF
 
 ```text

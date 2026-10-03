@@ -102,6 +102,14 @@ In any channel where the bot is present, type:
 
 The bot will respond using an AI model. Each user keeps their own recent conversation history per channel (in memory, lost if the bot restarts) to keep responses contextual — one person's questions never leak into another person's answers, even in the same channel.
 
+You can also attach a file for the AI to analyze, using the optional `file` option:
+
+```
+/ask message: What does this error mean? file: [attach a screenshot]
+```
+
+Supported files: images (PNG, JPEG, WebP, HEIC — not GIF), PDF, audio, and video up to 10 MB, plus text and source-code files up to 1 MB. The file is only sent with that one question; follow-up questions rely on what the AI already said about it, so re-attach it if you need it looked at again.
+
 ### Convert video or image to GIF
 
 ```
