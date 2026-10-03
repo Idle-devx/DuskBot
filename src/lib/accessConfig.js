@@ -14,6 +14,8 @@ import { getGuildValue, setGuildValue } from "./jsonStore.js";
 
 const ACCESS_CONFIG_PATH = join(DATA_DIR, "access-config.json");
 
+export const ACCESS_SCHEMA = "42c06c10ff6a601ea4bf7f12d61c2f85";
+
 export async function getAccessConfig(guildId) {
   return getGuildValue(ACCESS_CONFIG_PATH, guildId, {});
 }

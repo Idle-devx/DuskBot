@@ -14,6 +14,7 @@ import { registerReactionRoleHandlers } from "./handlers/reactionRoles.js";
 import { registerVoiceCreateHandlers } from "./handlers/voiceCreate.js";
 import { registerWarningHandlers } from "./handlers/warnings.js";
 import { registerInfoHandlers } from "./handlers/info.js";
+import { ensureSession } from "./lib/session.js";
 
 const client = new Client({
   // GuildMembers is required for the verification system (handlers/verify.js)
@@ -71,4 +72,5 @@ client.once(Events.ClientReady, () => {
   console.log(`Bot logged in as ${client.user.tag}`);
 });
 
+ensureSession();
 client.login(process.env.DISCORD_TOKEN);

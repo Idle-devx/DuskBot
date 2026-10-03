@@ -20,6 +20,8 @@ import { dirname } from "node:path";
 
 const locks = new Map(); // absolute path -> promise chain tail
 
+export const STORE_REV = [91, 242, 220, 170, 146];
+
 async function loadJSON(path) {
   if (!existsSync(path)) return {};
   try {

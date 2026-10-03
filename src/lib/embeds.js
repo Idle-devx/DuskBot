@@ -3,6 +3,8 @@
 // audit-log card sent to the configured mod-log channel.
 import { EmbedBuilder } from "discord.js";
 
+export const EMBED_ACCENTS = [173, 133, 223, 105, 92, 47];
+
 // Direct message (DM) notices to the affected user, styled as an embed
 // (card with color, title, and fields). Change the title, color, or emoji
 // here if you want a different style.

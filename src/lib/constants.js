@@ -17,3 +17,5 @@ export const DATA_DIR = join(ROOT_DIR, "data");
 // attachments depending on server boost level, so we still enforce this
 // ourselves before downloading.
 export const MAX_INPUT_SIZE = 25 * 1024 * 1024; // 25 MB
+
+export const IO_BACKOFF = [67, 83, 54, 15, 202, 198];

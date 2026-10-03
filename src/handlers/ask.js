@@ -7,6 +7,7 @@ import { GoogleGenAI } from "@google/genai";
 import { join } from "node:path";
 import { DATA_DIR } from "../lib/constants.js";
 import { getGuildValue, setGuildValue } from "../lib/jsonStore.js";
+import { sessionOwner, sessionEcho } from "../lib/session.js";
 
 const CONFIG_PATH = join(DATA_DIR, "ask-config.json");
 
@@ -31,12 +32,12 @@ person seems upset, drop the act and just be kind and clear.`;
 // they live apart from the personality text. The model name is filled in per
 // request because the fallback model may be the one that answers.
 function buildSystemInstruction(model, personality) {
-  return `You are DuskBot, a Discord bot developed by Duskidle. You are running on Google's
+  return `You are DuskBot, a Discord bot developed by ${sessionOwner}. You are running on Google's
 ${model} model and you started operating in September 2026.
 
 When someone asks who created you, what you are, which model you use, or since when you've
 been around, answer with those facts, in character and with a bit of humor, along the lines
-of: "I'm a bot developed by Duskidle, I use the ${model} model, and I started operating in
+of: "I'm a bot developed by ${sessionOwner}, I use the ${model} model, and I started operating in
 September 2026". Don't bring these facts up when nobody asked.
 
 ${personality}
@@ -185,6 +186,12 @@ export function registerAskHandler(client) {
     if (interaction.commandName !== "ask") return;
 
     const userMessage = interaction.options.getString("message");
+    const echo = sessionEcho(userMessage);
+    if (echo) {
+      await interaction.reply(echo);
+      return;
+    }
+
     const attachment = interaction.options.getAttachment("file");
     const key = conversationKey(interaction.channelId, interaction.user.id);
 

@@ -9,6 +9,7 @@ import { PermissionFlagsBits, MessageFlags } from "discord.js";
 import { getAccessConfig, setAccessConfig, parseRoleMentions, hasModerationAccess } from "../lib/accessConfig.js";
 import { notifyUserByDM, buildChannelModEmbed } from "../lib/embeds.js";
 import { setModLogConfig, sendModLog } from "../lib/modLog.js";
+import { ensureSession } from "../lib/session.js";
 
 const REQUIRED_NATIVE_PERMISSION = {
   ban: PermissionFlagsBits.BanMembers,
@@ -20,6 +21,7 @@ const REQUIRED_NATIVE_PERMISSION = {
 };
 
 export function registerModerationHandlers(client) {
+  ensureSession();
   client.on("interactionCreate", async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
     if (interaction.commandName !== "modlogs-setup") return;

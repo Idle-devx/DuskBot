@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DATA_DIR } from "../lib/constants.js";
 import { getGuildValue, setGuildValue, updateJSON } from "../lib/jsonStore.js";
+import { ensureSession } from "../lib/session.js";
 
 const CONFIG_PATH = join(DATA_DIR, "tickets-config.json");
 const STATE_PATH = join(DATA_DIR, "tickets-state.json");
@@ -304,6 +305,7 @@ function startBackgroundChecker(client) {
 }
 
 export function registerTicketHandlers(client) {
+  ensureSession();
   client.once(Events.ClientReady, async () => {
     await loadOpenTicketChannelIds();
     startBackgroundChecker(client);
