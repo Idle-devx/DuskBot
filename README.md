@@ -1,6 +1,6 @@
-# Discord Bot with AI (Groq)
+# Discord Bot with AI (Gemini)
 
-Discord bot that responds to the `/ask` command using Groq's free API (open-source models like Llama), plus moderation (including warnings and bulk-delete), GIF conversion, forum posting, tickets, member verification, anti-raid protection, reaction roles, join-to-create voice channels, member/server lookup commands, and a small code snippet storage system.
+Discord bot that responds to the `/ask` command using Google's Gemini API (free tier), plus moderation (including warnings and bulk-delete), GIF conversion, forum posting, tickets, member verification, anti-raid protection, reaction roles, join-to-create voice channels, member/server lookup commands, and a small code snippet storage system.
 
 ## Project structure
 
@@ -11,7 +11,7 @@ discord-bot/
 │   ├── commands/
 │   │   └── definitions.js    # All slash command definitions (registered by scripts/deploy-*.js)
 │   ├── handlers/             # One file per feature — each exports a register*Handler(s)(client) function
-│   │   ├── ask.js            # /ask (Groq)
+│   │   ├── ask.js            # /ask (Gemini)
 │   │   ├── gif.js            # /gif (video/image -> GIF conversion)
 │   │   ├── gifReplies.js     # Automatic GIF replies (GIPHY)
 │   │   ├── forum.js          # /forum
@@ -49,7 +49,7 @@ Every feature module under `src/handlers/` follows the same shape: it owns its o
 
 - [Node.js](https://nodejs.org) version 18 or higher.
 - An application/bot created in the [Discord Developer Portal](https://discord.com/developers/applications).
-- A free API key from [console.groq.com](https://console.groq.com).
+- A free Gemini API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
 - A free API key from [developers.giphy.com](https://developers.giphy.com) (for random GIF replies).
 
 ## Installation
@@ -69,7 +69,7 @@ Every feature module under `src/handlers/` follows the same shape: it owns its o
    - `DISCORD_TOKEN`: your bot's token (Discord portal > your app > Bot > Reset Token).
    - `DISCORD_CLIENT_ID`: Application ID (Discord portal > your app > General Information).
    - `DISCORD_GUILD_ID`: your server's ID (right-click your server icon > Copy Server ID, requires Developer Mode enabled in Discord). Only used by `deploy:dev` and `clear-guild-commands`, not by the bot itself.
-   - `GROQ_API_KEY`: your free Groq API key.
+   - `GEMINI_API_KEY`: your free Gemini API key.
    - `GIPHY_API_KEY`: your free GIPHY API key.
 
 3. Register the slash commands globally, so they work on any server the bot joins (only needed once, or whenever you change a command — can take up to 1 hour to propagate the first time):
@@ -269,7 +269,7 @@ If someone replies directly to a message from the Bot, it automatically responds
 
 ## Notes
 
-- The model used is `openai/gpt-oss-20b` (free on Groq's developer plan). If you want higher-quality responses at the cost of a bit more latency, you can change it in `src/handlers/ask.js` to `openai/gpt-oss-120b`. Groq periodically updates which models are available for free, so if you get a "model_not_found" error in the future, check the current list at [console.groq.com/docs/models](https://console.groq.com/docs/models).
+- The model used is `gemini-3.8-flash` (available on Gemini's free tier); change the `MODEL` constant in `src/handlers/ask.js` to use another one. Google periodically retires models, so if you get a "model not found" error in the future, check the current list at [ai.google.dev/gemini-api/docs/models](https://ai.google.dev/gemini-api/docs/models). Free-tier rate limits are shown in [AI Studio](https://aistudio.google.com/rate-limit). Note that on the free tier, Google uses the prompts and responses to improve its products.
 - Discord limits messages to 2000 characters; the bot automatically splits long responses into multiple messages.
 - GIF conversion uses `ffmpeg-static`, which bundles the ffmpeg executable itself — you don't need to install anything separately on the system. Note that `fluent-ffmpeg` itself is no longer maintained upstream; it still works fine today, but it's worth keeping an eye on for a future replacement.
 - To invite the bot to another server, generate a new link in the Discord portal (OAuth2 > URL Generator) with the `bot` and `applications.commands` scopes.

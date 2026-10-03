@@ -1,6 +1,6 @@
-# Bot de Discord con IA (Groq)
+# Bot de Discord con IA (Gemini)
 
-Bot de Discord que responde al comando `/ask` utilizando la API gratuita de Groq (con modelos de código abierto como Llama), además de moderación (incluyendo advertencias y borrado masivo de mensajes), conversión a GIF, publicaciones en foro, sistema de tickets, verificación de miembros, protección anti-raid, roles por reacción, canales de voz automáticos, comandos de información de usuario/servidor, y un pequeño sistema de almacenamiento de fragmentos de código.
+Bot de Discord que responde al comando `/ask` utilizando la API de Gemini de Google (nivel gratuito), además de moderación (incluyendo advertencias y borrado masivo de mensajes), conversión a GIF, publicaciones en foro, sistema de tickets, verificación de miembros, protección anti-raid, roles por reacción, canales de voz automáticos, comandos de información de usuario/servidor, y un pequeño sistema de almacenamiento de fragmentos de código.
 
 > Nota: este archivo estaba desactualizado en una versión anterior — mencionaba un comando `/pregunta` que ya no existe. El comando real, registrado en `src/commands/definitions.js`, es `/ask` (en inglés, como el resto de los comandos de barra del bot).
 
@@ -12,7 +12,7 @@ Ver la sección "Project structure" en `README.md` para el detalle completo. En 
 
 - [Node.js](https://nodejs.org), versión 18 o superior.
 - Una aplicación/bot creado en el [Portal de Desarrolladores de Discord](https://discord.com/developers/applications).
-- Una clave de API gratuita de [console.groq.com](https://console.groq.com).
+- Una clave de API gratuita de Gemini de [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
 - Una clave de API gratuita de [developers.giphy.com](https://developers.giphy.com) (para las respuestas automáticas con GIF).
 
 ## Instalación
@@ -32,7 +32,7 @@ Ver la sección "Project structure" en `README.md` para el detalle completo. En 
    - `DISCORD_TOKEN`: el token de tu bot (Portal de Discord > tu aplicación > Bot > Restablecer token).
    - `DISCORD_CLIENT_ID`: ID de la aplicación (Portal de Discord > tu aplicación > Información general).
    - `DISCORD_GUILD_ID`: ID de tu servidor (clic derecho en el ícono de tu servidor > Copiar ID del servidor; requiere Modo Desarrollador activado). Solo se usa para `deploy:dev` y `clear-guild-commands`, no para correr el bot en sí.
-   - `GROQ_API_KEY`: tu clave de API gratuita de Groq.
+   - `GEMINI_API_KEY`: tu clave de API gratuita de Gemini.
    - `GIPHY_API_KEY`: tu clave de API gratuita de GIPHY.
 
 3. Registra los comandos de barra (`/`) globalmente para que funcionen en cualquier servidor al que se una el bot (solo es necesario hacerlo una vez o cuando cambies algún comando; la primera vez puede tardar hasta 1 hora en propagarse):
@@ -193,7 +193,7 @@ Si alguien responde directamente a un mensaje del bot, este responde automática
 
 ## Notas
 
-- El modelo utilizado es `openai/gpt-oss-20b` (gratuito en el plan para desarrolladores de Groq); se puede cambiar en `src/handlers/ask.js`.
+- El modelo utilizado es `gemini-3.8-flash` (disponible en el nivel gratuito de Gemini); se puede cambiar en la constante `MODEL` de `src/handlers/ask.js`. En el nivel gratuito, Google usa los mensajes y respuestas para mejorar sus productos.
 - Discord limita los mensajes a 2000 caracteres; el bot divide automáticamente las respuestas largas.
 - La conversión de GIF utiliza `ffmpeg-static`, que incluye el ejecutable de ffmpeg.
 - `node scripts/check-commands.js` verifica que cada comando definido tenga un handler correspondiente.
