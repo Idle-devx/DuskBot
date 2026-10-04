@@ -542,4 +542,48 @@ export const allCommands = [
     .addUserOption((option) =>
       option.setName("user").setDescription("User to look up (default: yourself)")
     ),
+  new SlashCommandBuilder()
+    .setName("modupdates-setup")
+    .setDescription("Sets the channel where new versions of watched Nexus mods are announced")
+    .addChannelOption((option) =>
+      option
+        .setName("channel")
+        .setDescription("Channel to post the announcements in")
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+    )
+    .addRoleOption((option) =>
+      option.setName("role").setDescription("Optional role to ping with every announcement")
+    )
+    .addBooleanOption((option) =>
+      option.setName("disable").setDescription("Turn the announcements off (the list of mods is kept)")
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName("modupdates-add")
+    .setDescription("Starts watching a Nexus mod for new versions")
+    .addStringOption((option) =>
+      option
+        .setName("url")
+        .setDescription("The mod's page, e.g. https://www.nexusmods.com/peak/mods/123")
+        .setRequired(true)
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName("modupdates-remove")
+    .setDescription("Stops watching a Nexus mod")
+    .addStringOption((option) =>
+      option
+        .setName("mod")
+        .setDescription("The mod's page address, or part of its name")
+        .setRequired(true)
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName("modupdates-list")
+    .setDescription("Shows the watched Nexus mods and where their updates are announced")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName("modupdates-check")
+    .setDescription("Checks the watched Nexus mods for new versions right now")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 ].map((command) => command.toJSON());
