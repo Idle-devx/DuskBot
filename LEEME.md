@@ -34,6 +34,7 @@ Ver la sección "Project structure" en `README.md` para el detalle completo. En 
    - `DISCORD_GUILD_ID`: ID de tu servidor (clic derecho en el ícono de tu servidor > Copiar ID del servidor; requiere Modo Desarrollador activado). Solo se usa para `deploy:dev` y `clear-guild-commands`, no para correr el bot en sí.
    - `GEMINI_API_KEY`: tu clave de API gratuita de Gemini.
    - `GIPHY_API_KEY`: tu clave de API gratuita de GIPHY.
+   - `NEXUS_API_KEY`: opcional. Tu clave personal de la API de Nexus Mods (al final de <https://www.nexusmods.com/users/myaccount?tab=api+access>). Solo hace falta para los avisos de actualización de mods.
 
 3. Registra los comandos de barra (`/`) globalmente para que funcionen en cualquier servidor al que se una el bot (solo es necesario hacerlo una vez o cuando cambies algún comando; la primera vez puede tardar hasta 1 hora en propagarse):
 
@@ -197,6 +198,20 @@ Elimina esa combinación, actualiza la embed y quita la reacción propia del bot
 ```
 
 Comando solo para administradores. Cada vez que alguien se une a `trigger_channel`, el bot crea un canal de voz nuevo (con el nombre generado a partir de `name_template`, que debe incluir `{user}`) dentro de `category` (por defecto, la misma categoría del canal disparador) y mueve ahí al usuario automáticamente. El canal se elimina solo en cuanto queda vacío — no hay que limpiar nada manualmente, y una revisión al iniciar el bot elimina cualquier canal que haya quedado vacío mientras estaba apagado. Ejecuta `/voicecreate-setup disable:true` para desactivarlo — unirse al antiguo canal disparador ya no crea nada nuevo, aunque los canales personales que sigan abiertos en ese momento igual se borran solos al vaciarse. Guardado por servidor en `data/voicecreate-config.json`; qué canales creó el bot se rastrea en `data/voicecreate-state.json`. Toda esta lógica vive en `src/handlers/voiceCreate.js`.
+
+### Avisos de actualización de mods de Nexus
+
+```
+/modupdates-setup channel:[canal de texto] role:[rol opcional a mencionar]
+/modupdates-add url:[la página del mod en Nexus]
+/modupdates-remove mod:[dirección de la página, o parte del nombre]
+/modupdates-list
+/modupdates-check
+```
+
+Comandos solo para administradores. Elige un canal con `/modupdates-setup` y agrega cada mod con `/modupdates-add` (pega la dirección de su página en Nexus). Cada 10 minutos el bot le pregunta a Nexus la versión actual de cada mod, y cuando cambia publica una tarjeta en el canal con el nombre del mod, la versión anterior y la nueva, el registro de cambios de esa versión tal como está en la página de Nexus (o el resumen del mod si no hay), y un enlace a los archivos. La versión que tiene un mod al agregarlo solo se guarda, no se anuncia. `/modupdates-check` revisa en el momento, y `/modupdates-list` muestra qué se está vigilando y el motivo de cualquier mod que no se pudo revisar. `/modupdates-setup disable:true` detiene los avisos sin perder la lista.
+
+Requiere `NEXUS_API_KEY` en `.env`; sin ella los comandos lo indican y la revisión automática queda apagada. Límite de 25 mods por servidor. Se guarda por servidor en `data/modupdates-config.json`. Toda la lógica está en `src/handlers/modUpdates.js`; `npm run test:mod-updates` prueba el verificador sin conexión.
 
 ### Almacenamiento de fragmentos de código
 

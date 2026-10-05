@@ -9,6 +9,7 @@
     "deploy": "node scripts/deploy-commands.js",
     "deploy:dev": "node scripts/deploy-commands-dev.js",
     "check-commands": "node scripts/check-commands.js",
+    "test:mod-updates": "node scripts/test-mod-updates.js",
     "clear-guild-commands": "node scripts/clear-guild-commands.js"
   },
   "dependencies": {

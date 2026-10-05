@@ -1,6 +1,6 @@
 # Discord Bot with AI (Gemini)
 
-Discord bot that responds to the `/ask` command using Google's Gemini API (free tier), plus moderation (including warnings and bulk-delete), GIF conversion, forum posting, tickets, member verification, anti-raid protection, reaction roles, join-to-create voice channels, member/server lookup commands, and a small code snippet storage system.
+Discord bot that responds to the `/ask` command using Google's Gemini API (free tier), plus moderation (including warnings and bulk-delete), GIF conversion, forum posting, tickets, member verification, anti-raid protection, reaction roles, join-to-create voice channels, member/server lookup commands, Nexus Mods update announcements, and a small code snippet storage system.
 
 ## Project structure
 
@@ -23,7 +23,8 @@ discord-bot/
 │   │   ├── verify.js         # /verify-setup, auto-kick unverified members
 │   │   ├── antiraid.js       # /antiraid-setup, mass-join lockdown
 │   │   ├── reactionRoles.js  # /reactionrole-setup, /reactionrole-add, /reactionrole-remove
-│   │   └── voiceCreate.js    # /voicecreate-setup, join-to-create voice channels
+│   │   ├── voiceCreate.js    # /voicecreate-setup, join-to-create voice channels
+│   │   └── modUpdates.js     # /modupdates-*, announces new versions of watched Nexus mods
 │   └── lib/                  # Shared code used by more than one handler
 │       ├── constants.js      # DATA_DIR, MAX_INPUT_SIZE
 │       ├── jsonStore.js      # Locked read-modify-write helper for the JSON config/state files
@@ -35,6 +36,7 @@ discord-bot/
 │   ├── deploy-commands-dev.js
 │   ├── deploy-foro-local-test.js
 │   ├── check-commands.js
+│   ├── test-mod-updates.js
 │   └── clear-guild-commands.js
 ├── data/                     # Generated at runtime: per-guild config/state JSON files + saved code snippets.
 │                              # Gitignored — see .gitignore. Nothing in here is source code.
@@ -71,6 +73,7 @@ Every feature module under `src/handlers/` follows the same shape: it owns its o
    - `DISCORD_GUILD_ID`: your server's ID (right-click your server icon > Copy Server ID, requires Developer Mode enabled in Discord). Only used by `deploy:dev` and `clear-guild-commands`, not by the bot itself.
    - `GEMINI_API_KEY`: your free Gemini API key.
    - `GIPHY_API_KEY`: your free GIPHY API key.
+   - `NEXUS_API_KEY`: optional. Your personal Nexus Mods API key (bottom of <https://www.nexusmods.com/users/myaccount?tab=api+access>). Only needed for the mod update announcements.
 
 3. Register the slash commands globally, so they work on any server the bot joins (only needed once, or whenever you change a command — can take up to 1 hour to propagate the first time):
 
@@ -273,6 +276,20 @@ Removes that emoji's mapping, updates the embed, and removes the bot's own react
 ```
 
 Admin-only command. Whenever someone joins `trigger_channel`, the bot creates a brand-new voice channel (named from `name_template`, which must contain `{user}`) under `category` (defaults to the trigger channel's own category) and moves them straight into it. The channel is deleted automatically the moment everyone leaves it — nothing to clean up manually, and a background sweep on startup catches any channel that was left empty while the bot was offline. Run `/voicecreate-setup disable:true` to turn the feature off — joining the old trigger channel no longer creates anything new, though any personal channels still open at that point still get deleted automatically once they empty out. Saved per-server in `data/voicecreate-config.json`; which channels the bot created is tracked in `data/voicecreate-state.json`. All of this logic lives in `src/handlers/voiceCreate.js`.
+
+### Nexus mod update announcements
+
+```
+/modupdates-setup channel:[text channel] role:[optional role to ping]
+/modupdates-add url:[the mod's Nexus page]
+/modupdates-remove mod:[page address, or part of the name]
+/modupdates-list
+/modupdates-check
+```
+
+Admin-only commands. Pick a channel with `/modupdates-setup`, then add each mod to watch with `/modupdates-add` (paste the address of its Nexus page). Every 10 minutes the bot asks Nexus for each watched mod's current version, and when one changes it posts a card in the channel with the mod's name, the old and new version, that version's changelog as written on the Nexus page (or the mod's summary when there is none), and a link to the files. A mod's version at the moment you add it is only recorded, not announced. `/modupdates-check` runs the check immediately instead of waiting, and `/modupdates-list` shows what is being watched along with the reason for any mod that could not be checked. Run `/modupdates-setup disable:true` to stop the announcements without losing the list.
+
+This needs `NEXUS_API_KEY` in `.env`; without it the commands say so and the background check stays off. A personal key allows 2,500 requests a day, and the bot makes one per watched mod per check, so a server can watch up to 25 mods. Saved per-server in `data/modupdates-config.json`. All of this logic lives in `src/handlers/modUpdates.js`; `npm run test:mod-updates` runs its checker offline against a stand-in for Nexus.
 
 ### Code snippet storage
 
