@@ -1,6 +1,7 @@
 // Member verification system: posts a panel with a "Verify" button, grants a
 // role on click, and auto-kicks members who never verify within a
-// configurable window.
+// configurable window. Optionally greets each newly verified member in a
+// public channel (/verify-welcome).
 import {
   EmbedBuilder,
   ActionRowBuilder,
@@ -40,6 +41,73 @@ async function removePending(guildId, userId) {
     if (!all[guildId] || !(userId in all[guildId])) return;
     delete all[guildId][userId];
   });
+}
+
+// --- Welcome message for newly verified members -------------------------
+
+// Placeholders an admin can use in a custom message.
+const USER_TOKEN = "{user}";
+const HELPER_TOKEN = "{helper}";
+export const WELCOME_MAX_LENGTH = 1500;
+
+export const DEFAULT_WELCOME =
+  `Welcome ${USER_TOKEN}, feel free to tag ${HELPER_TOKEN} if you have any issue or error, ` +
+  "or if you want a cheat menu for any offline game or slop game.";
+// Used when no helper was chosen, so the sentence doesn't end up with a hole in it.
+export const DEFAULT_WELCOME_NO_HELPER =
+  `Welcome ${USER_TOKEN}, feel free to ask here if you have any issue or error, ` +
+  "or if you want a cheat menu for any offline game or slop game.";
+
+// "<@id>" for a member, "<@&id>" for a role. `mentionable` is whatever
+// discord.js hands back for a mentionable option: a Role has no `user`
+// and no `username`, a GuildMember has `user`, a bare User has `username`.
+export function mentionFor(mentionable) {
+  if (!mentionable?.id) return null;
+  const isUser = Boolean(mentionable.user) || typeof mentionable.username === "string";
+  return isUser ? `<@${mentionable.id}>` : `<@&${mentionable.id}>`;
+}
+
+// Fills the placeholders. A custom message that leaves out {user} still
+// greets the right person: the mention is put in front of it.
+export function buildWelcomeText({ template, userId, helperMention }) {
+  const user = `<@${userId}>`;
+  let text = (template ?? "").trim();
+  if (!text) text = helperMention ? DEFAULT_WELCOME : DEFAULT_WELCOME_NO_HELPER;
+  if (!text.includes(USER_TOKEN)) text = `${USER_TOKEN} ${text}`;
+  return text
+    .split(USER_TOKEN).join(user)
+    .split(HELPER_TOKEN).join(helperMention ?? "the staff");
+}
+
+// Only the new member is pinged. The helper's mention is shown as a
+// clickable tag but does not notify them: otherwise they'd get a ping for
+// every single person who verifies.
+export function buildWelcomeMessage({ template, userId, helperMention }) {
+  return {
+    content: buildWelcomeText({ template, userId, helperMention }),
+    allowedMentions: { users: [userId], roles: [], parse: [] },
+  };
+}
+
+// Never throws: a welcome that can't be posted must not undo or fail a
+// verification that already went through.
+async function sendWelcome(guild, config, userId) {
+  if (!config?.welcomeChannelId) return false;
+  try {
+    const channel = await guild.channels.fetch(config.welcomeChannelId).catch(() => null);
+    if (!channel?.isTextBased?.()) return false;
+    await channel.send(
+      buildWelcomeMessage({
+        template: config.welcomeMessage,
+        userId,
+        helperMention: config.welcomeHelper ?? null,
+      })
+    );
+    return true;
+  } catch (error) {
+    console.error("Error sending verification welcome message:", error);
+    return false;
+  }
 }
 
 async function sendVerifyLog(guild, config, description) {
@@ -113,6 +181,62 @@ export function registerVerifyHandlers(client) {
     }
   });
 
+  // --- /verify-welcome ---
+  client.on("interactionCreate", async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+    if (interaction.commandName !== "verify-welcome") return;
+
+    const channel = interaction.options.getChannel("channel");
+    const helper = interaction.options.getMentionable("helper");
+    const message = interaction.options.getString("message");
+    const disable = interaction.options.getBoolean("disable") ?? false;
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    try {
+      const current = await getConfig(interaction.guild.id);
+      if (!current) {
+        await interaction.editReply("Set up verification first with `/verify-setup`. The welcome is sent when someone presses its Verify button.");
+        return;
+      }
+
+      if (disable) {
+        await setConfig(interaction.guild.id, { welcomeChannelId: null });
+        await interaction.editReply("Welcome messages are off. Your message and helper are kept; run `/verify-welcome channel:` to turn them back on.");
+        return;
+      }
+
+      const partial = {};
+      if (channel) partial.welcomeChannelId = channel.id;
+      if (helper) partial.welcomeHelper = mentionFor(helper);
+      // "default" (or "reset") goes back to the built-in text
+      if (message !== null) partial.welcomeMessage = /^(default|reset)$/i.test(message.trim()) ? null : message.trim();
+
+      const next = { ...current, ...partial };
+      if (!next.welcomeChannelId) {
+        await interaction.editReply("Pick a `channel` for the welcome messages.");
+        return;
+      }
+
+      await setConfig(interaction.guild.id, partial);
+
+      const preview = buildWelcomeText({
+        template: next.welcomeMessage,
+        userId: interaction.user.id,
+        helperMention: next.welcomeHelper ?? null,
+      });
+      await interaction.editReply({
+        content:
+          `✅ Newly verified members will be welcomed in <#${next.welcomeChannelId}>. Preview, with you as the new member:\n\n${preview}\n\n` +
+          "Only the new member is pinged; the helper is shown as a tag but not notified.",
+        allowedMentions: { parse: [] },
+      });
+    } catch (error) {
+      console.error("Error setting up the verification welcome:", error);
+      await interaction.editReply("An error occurred saving the welcome message.");
+    }
+  });
+
   // --- New member joins: start tracking them as pending ---
   client.on("guildMemberAdd", async (member) => {
     // Bots are added deliberately via OAuth by someone with Manage Server
@@ -161,6 +285,7 @@ export function registerVerifyHandlers(client) {
       await removePending(interaction.guild.id, interaction.member.id);
       await interaction.reply({ content: "✅ You're verified! Welcome.", flags: MessageFlags.Ephemeral });
       await sendVerifyLog(interaction.guild, config, `✅ <@${interaction.member.id}> verified.`);
+      await sendWelcome(interaction.guild, config, interaction.member.id);
     } catch (error) {
       console.error("Error verifying member:", error);
       await interaction.reply({
