@@ -20,7 +20,7 @@ discord-bot/
 │   │   ├── info.js           # /userinfo /serverinfo /avatar
 │   │   ├── codeStorage.js    # /save-code /delete-code /code
 │   │   ├── tickets.js        # /ticket-setup, /close, ticket panel + auto-close
-│   │   ├── verify.js         # /verify-setup, auto-kick unverified members
+│   │   ├── verify.js         # /verify-setup, /verify-welcome, auto-kick unverified members
 │   │   ├── antiraid.js       # /antiraid-setup, mass-join lockdown
 │   │   ├── reactionRoles.js  # /reactionrole-setup, /reactionrole-add, /reactionrole-remove
 │   │   ├── voiceCreate.js    # /voicecreate-setup, join-to-create voice channels
@@ -216,6 +216,21 @@ Only the ticket opener, any of the configured support roles, and members with Ad
 **Inactivity alert and auto-close:** a background check runs every 5 minutes. If a ticket has been open longer than `alert_hours` (default 3) without being closed, the bot posts a one-time reminder in the channel (pinging the support role, if set). If a ticket goes `inactivity_hours` (default 24) with **zero messages** from anyone, it closes automatically the same way the button does (transcript + log + delete) — the inactivity timer resets on every new message in the channel. Open-ticket tracking is stored in `data/tickets-state.json`, and it's only cleared once the channel has actually been deleted — so a bot restart mid-close never leaves an orphaned, untracked ticket channel behind.
 
 All of this logic lives in `src/handlers/tickets.js`.
+
+### Welcome message for verified members
+
+`/verify-welcome` makes the bot greet every member who presses the Verify button (set up with `/verify-setup` first). Admin only.
+
+| Option | What it does |
+| --- | --- |
+| `channel` | Where the welcome is posted. Required the first time. |
+| `helper` | A member or role the message tells people to tag. Fills `{helper}`. |
+| `message` | Your own text. `{user}` is the new member, `{helper}` the helper. `default` goes back to the built-in text. |
+| `disable` | Turns the welcome off; the channel is forgotten, the message and helper are kept. |
+
+Built-in text: *"Welcome {user}, feel free to tag {helper} if you have any issue or error, or if you want a cheat menu for any offline game or slop game."*
+
+Only the new member is pinged. The helper shows up as a clickable tag but gets no notification, so they are not pinged once per new member. The welcome is sent once, when the role is granted; a member who already has the role and presses the button again gets nothing. Stored per server in `data/verify-config.json`; `npm run test:verify-welcome` checks the message building offline.
 
 ### Anti-raid lockdown
 

@@ -10,6 +10,7 @@
     "deploy:dev": "node scripts/deploy-commands-dev.js",
     "check-commands": "node scripts/check-commands.js",
     "test:mod-updates": "node scripts/test-mod-updates.js",
+    "test:verify-welcome": "node scripts/test-verify-welcome.js",
     "clear-guild-commands": "node scripts/clear-guild-commands.js"
   },
   "dependencies": {

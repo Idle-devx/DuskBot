@@ -306,6 +306,30 @@ export const allCommands = [
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
+    .setName("verify-welcome")
+    .setDescription("Welcomes each newly verified member in a channel")
+    .addChannelOption((option) =>
+      option
+        .setName("channel")
+        .setDescription("Channel where the welcome messages are posted")
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+    )
+    .addMentionableOption((option) =>
+      option
+        .setName("helper")
+        .setDescription("Member or role the message tells people to tag ({helper}); shown as a tag, not pinged")
+    )
+    .addStringOption((option) =>
+      option
+        .setName("message")
+        .setDescription("Your own text. {user} = the new member, {helper} = the helper. \"default\" restores the built-in one")
+        .setMaxLength(1500)
+    )
+    .addBooleanOption((option) =>
+      option.setName("disable").setDescription("Turn the welcome messages off (your settings are kept)")
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
     .setName("save-code")
     .setDescription("Saves a code file into a project folder")
     .addStringOption((option) =>

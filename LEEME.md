@@ -155,6 +155,12 @@ No requieren ningún permiso especial. Toda esta lógica vive en `src/handlers/i
 
 Publica un panel con botón "Open Ticket". Las categorías se editan en `TICKET_CATEGORIES` dentro de `src/handlers/tickets.js`. El seguimiento de tickets abiertos vive en `data/tickets-state.json`, y solo se borra una vez que el canal fue efectivamente eliminado — así un reinicio del bot a mitad del cierre nunca deja un ticket huérfano sin seguimiento.
 
+### Mensaje de bienvenida para miembros verificados
+
+`/verify-welcome` hace que el bot salude a cada miembro que pulsa el botón de verificación (primero hay que configurar `/verify-setup`). Solo administradores. Opciones: `channel` (canal donde se publica; obligatorio la primera vez), `helper` (miembro o rol al que el mensaje invita a etiquetar; rellena `{helper}`), `message` (texto propio; `{user}` es el nuevo miembro y `{helper}` el ayudante; `default` vuelve al texto incluido) y `disable` (lo apaga; se conservan el mensaje y el ayudante).
+
+Solo se notifica al nuevo miembro: el ayudante aparece como etiqueta pero no recibe ping. Se envía una sola vez, al dar el rol. Se guarda por servidor en `data/verify-config.json`; `npm run test:verify-welcome` prueba la construcción del mensaje sin conexión.
+
 ### Anti-raid
 
 ```
